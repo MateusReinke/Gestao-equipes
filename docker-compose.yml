@@ -1,2 +1,46 @@
-include:
-  - ./docker/docker-compose.yml
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gestao}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gestao123}
+      POSTGRES_DB: ${POSTGRES_DB:-gestao_escalas}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+      args:
+        NODE_ENV: development
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-gestao}:${POSTGRES_PASSWORD:-gestao123}@postgres:5432/${POSTGRES_DB:-gestao_escalas}?schema=public}
+      APP_PORT: ${APP_PORT:-4000}
+      NODE_ENV: ${NODE_ENV:-production}
+      JWT_SECRET: ${JWT_SECRET:-change_me}
+    ports:
+      - "4000:4000"
+    depends_on:
+      - postgres
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        NODE_ENV: development
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

@@ -16,6 +16,23 @@ Plataforma SaaS API-first para gestão centralizada de escalas, turnos, plantõe
 - `prisma/` schema, migrations e seed
 - `docker/` Dockerfiles e compose base
 
+## Deploy (Coolify)
+
+O `docker-compose.yml` da raiz já contém todos os serviços (`postgres`, `backend`, `frontend`) para evitar erro de deploy como `no service selected`.
+
+### Importação com variáveis prontas
+
+1. Copie o arquivo de exemplo:
+
+```bash
+cp .env.example .env
+```
+
+2. Ajuste os valores sensíveis (`JWT_SECRET`, senha do banco, etc.).
+3. No Coolify, mantenha as mesmas variáveis no painel de Environment (o projeto já possui defaults no `docker-compose.yml`).
+
+> Observação: se `NODE_ENV=production` estiver marcado como **Build-time** no Coolify, dependências de build podem ser ignoradas em projetos Node. Use essa variável como Runtime ou defina `development` no build.
+
 ## Variáveis de ambiente
 
 ### Backend
