@@ -14,8 +14,7 @@ Plataforma SaaS API-first para gestão centralizada de escalas, turnos, plantõe
 - `backend/` API REST (controllers, services, repositories)
 - `frontend/` painel administrativo estilo SaaS
 - `prisma/` schema, migrations e seed
-- `docker/` Dockerfiles
-- `docker-compose.yml` compose raiz para deploy (Coolify/Portainer/local)
+- `docker/` Dockerfiles e compose base
 
 ## Variáveis de ambiente
 
