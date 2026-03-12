@@ -30,8 +30,23 @@ cp .env.example .env
 
 2. Ajuste os valores sensíveis (`JWT_SECRET`, senha do banco, etc.).
 3. No Coolify, mantenha as mesmas variáveis no painel de Environment (o projeto já possui defaults no `docker-compose.yml`).
+4. Se você roda muitos projetos no mesmo host, altere as portas de host: `POSTGRES_PORT`, `BACKEND_PORT` e `FRONTEND_PORT`.
 
-> Observação: se `NODE_ENV=production` estiver marcado como **Build-time** no Coolify, dependências de build podem ser ignoradas em projetos Node. Use essa variável como Runtime ou defina `development` no build.
+> Observação: para build do Next.js, mantenha `NODE_ENV=production` (Build-time e Runtime) para evitar inconsistências durante `next build`. Neste projeto, as imagens já instalam dependências de build com `npm ci --include=dev`.
+
+### Troubleshooting (Coolify)
+
+- Erro `failed to read /artifacts/build-time.env: Invalid template` normalmente indica valor inválido em alguma variável de ambiente.
+- No campo `DATABASE_URL`, informe a URL completa (sem `${...}` incompleto), por exemplo:
+
+```env
+DATABASE_URL=postgresql://admin:SUA_SENHA@postgres:5432/gestao-bd?schema=public
+POSTGRES_PORT=55432
+BACKEND_PORT=54000
+FRONTEND_PORT=53000
+```
+
+- Evite colar variáveis com `\n` literal na mesma linha. Cada variável deve ficar em uma linha separada.
 
 ## Variáveis de ambiente
 
@@ -47,7 +62,7 @@ JWT_SECRET=change_me
 ### Frontend
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:4000
+NEXT_PUBLIC_API_URL=http://localhost:54000
 ```
 
 ## Subir com Docker (recomendado)
