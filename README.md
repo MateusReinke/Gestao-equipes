@@ -1,67 +1,81 @@
-# Gestão de Escalas e Plantões
+# Gestão de Escalas Operacionais e Plantões
 
-Sistema completo para gestão de equipes, escalas, plantões e férias com backend em Node.js/TypeScript, frontend em Next.js e banco PostgreSQL via Prisma.
+Plataforma SaaS API-first para gestão centralizada de escalas, turnos, plantões, férias e feriados para equipes de NOC, Service Desk, Infraestrutura e Operações.
+
+## Stack
+
+- **Backend:** Node.js, TypeScript, Express modular + Prisma
+- **Frontend:** Next.js (App Router), React, TypeScript, TailwindCSS
+- **Banco:** PostgreSQL
+- **Infra:** Docker + Docker Compose
 
 ## Estrutura
 
-- `backend/` API REST (Express + Prisma)
-- `frontend/` Painel administrativo (Next.js + Tailwind)
-- `prisma/` Modelo relacional, migrações e seed
-- `docker/` Artefatos de containerização
+- `backend/` API REST (controllers, services, repositories)
+- `frontend/` painel administrativo estilo SaaS
+- `prisma/` schema, migrations e seed
+- `docker/` Dockerfiles e compose base
 
 ## Variáveis de ambiente
 
-Backend:
+### Backend
 
 ```env
-DATABASE_URL=postgresql://user:pass@host:5432/db
+DATABASE_URL=postgresql://user:pass@host:5432/database?schema=public
 APP_PORT=4000
-APP_ENV=development
+NODE_ENV=production
 JWT_SECRET=change_me
 ```
 
-Frontend:
+### Frontend
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:4000
 ```
 
-## Execução local
+## Subir com Docker (recomendado)
 
 ```bash
-cd backend
-npm install
-npx prisma migrate deploy --schema ../prisma/schema.prisma
-npm run seed
-npm run dev
+docker compose up -d --build
 ```
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+No startup do backend são executados automaticamente:
 
-## Principais endpoints
+1. `prisma generate`
+2. `prisma migrate deploy`
+3. `seed` inicial
 
-- `GET /health`
-- `GET /api/plantonista/hoje`
-- `GET /api/plantonista/agora`
+> Você pode usar PostgreSQL externo via `DATABASE_URL` sem alterar o código.
+
+## Seed inicial
+
+- Equipes: `NOC`, `Infraestrutura`, `Service Desk`
+- Turnos: `T1`, `T2`, `T3`, `Plantão`
+- Usuário admin:
+  - email: `admin@gestaoescala.local`
+  - senha: `Admin@123`
+
+## Endpoints principais
+
+- `GET /api/plantao/agora`
+- `GET /api/plantao/hoje`
+- `GET /api/plantonista/agora` (compatibilidade)
 - `GET /api/escala/data?data=YYYY-MM-DD`
+- `GET /api/escala/colaborador/:colaboradorId`
 - `GET /api/colaboradores`
 - `GET /api/equipes`
 
-## Regras de negócio aplicadas
+## Segurança
 
-- Impede escala durante férias
-- Impede dois turnos no mesmo dia para o mesmo colaborador
-- Plantões com período atravessando dias
-- Feriados destacados para consumo no calendário
+- JWT (`POST /auth/login`)
+- Perfis: `admin`, `gestor`, `visualizador`
+- Auditoria de alterações em `auditoria`
 
-## Docker
+## Funcionalidades entregues
 
-- `docker/backend.Dockerfile`
-- `docker/frontend.Dockerfile`
-- `docker/docker-compose.yml`
-
-> O PostgreSQL pode estar em container separado; ajuste `DATABASE_URL`.
+- Dashboard operacional
+- Cadastros base (equipes, clientes, colaboradores, turnos)
+- Escala diária com regra anti-conflito e bloqueio por férias aprovadas
+- Plantões por período (inclusive atravessando dias)
+- Gestão de férias e feriados
+- Endpoint crítico para automações (`/api/plantonista/agora`)

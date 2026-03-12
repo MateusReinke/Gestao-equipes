@@ -23,7 +23,7 @@ class DashboardService {
       }),
       prisma.vacation.findMany({
         where: {
-          aprovado: true,
+          status: 'aprovado',
           dataInicio: { lte: today },
           dataFim: { gte: today },
         },

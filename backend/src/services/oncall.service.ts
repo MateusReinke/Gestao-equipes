@@ -7,11 +7,21 @@ class OnCallService {
     return prisma.onCall.findMany({
       where: { dataInicio: { lte: now }, dataFim: { gte: now } },
       include: { colaborador: true, cliente: true },
+      orderBy: { dataInicio: 'asc' },
     });
   }
 
-  getNow() {
-    return this.getToday();
+  async getNowSummary() {
+    const active = await this.getToday();
+    const first = active[0];
+    const now = new Date();
+    return {
+      data: now.toISOString().slice(0, 10),
+      hora: now.toTimeString().slice(0, 5),
+      turno: first?.descricao || 'Plantão',
+      responsavel: first?.colaborador?.nome || null,
+      telefone: first?.colaborador?.telefone || null,
+    };
   }
 
   async create(input: {
@@ -20,6 +30,7 @@ class OnCallService {
     colaboradorId: number;
     clienteId?: number;
     descricao?: string;
+    usuario?: string;
   }) {
     const onCall = await prisma.onCall.create({
       data: {
@@ -32,7 +43,13 @@ class OnCallService {
       include: { colaborador: true, cliente: true },
     });
 
-    await registerAudit('plantao', 'create', onCall);
+    await registerAudit({
+      usuario: input.usuario || 'sistema',
+      acao: 'create',
+      tabela: 'plantao_periodos',
+      registroId: String(onCall.id),
+      dadosNovos: onCall,
+    });
     return onCall;
   }
 }

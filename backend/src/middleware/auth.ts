@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { JwtPayload } from '../types/auth';
 
-export function auth(requiredRoles: JwtPayload['role'][] = ['admin', 'gestor', 'viewer']) {
+export function auth(requiredRoles: JwtPayload['role'][] = ['admin', 'gestor', 'visualizador']) {
   return (req: Request, res: Response, next: NextFunction) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) return res.status(401).json({ error: 'Token ausente' });
