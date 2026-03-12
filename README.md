@@ -31,7 +31,18 @@ cp .env.example .env
 2. Ajuste os valores sensíveis (`JWT_SECRET`, senha do banco, etc.).
 3. No Coolify, mantenha as mesmas variáveis no painel de Environment (o projeto já possui defaults no `docker-compose.yml`).
 
-> Observação: se `NODE_ENV=production` estiver marcado como **Build-time** no Coolify, dependências de build podem ser ignoradas em projetos Node. Use essa variável como Runtime ou defina `development` no build.
+> Observação: para build do Next.js, mantenha `NODE_ENV=production` (Build-time e Runtime) para evitar inconsistências durante `next build`. Neste projeto, as imagens já instalam dependências de build com `npm ci --include=dev`.
+
+### Troubleshooting (Coolify)
+
+- Erro `failed to read /artifacts/build-time.env: Invalid template` normalmente indica valor inválido em alguma variável de ambiente.
+- No campo `DATABASE_URL`, informe a URL completa (sem `${...}` incompleto), por exemplo:
+
+```env
+DATABASE_URL=postgresql://admin:SUA_SENHA@postgres:5432/gestao-bd?schema=public
+```
+
+- Evite colar variáveis com `\n` literal na mesma linha. Cada variável deve ficar em uma linha separada.
 
 ## Variáveis de ambiente
 
