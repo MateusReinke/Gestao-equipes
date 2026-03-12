@@ -1,7 +1,23 @@
 import { prisma } from '../config/prisma';
 
-export async function registerAudit(entidade: string, acao: string, detalhes?: unknown) {
+type AuditInput = {
+  usuario: string;
+  acao: string;
+  tabela: string;
+  registroId?: string;
+  dadosAnteriores?: unknown;
+  dadosNovos?: unknown;
+};
+
+export async function registerAudit(input: AuditInput) {
   await prisma.auditLog.create({
-    data: { entidade, acao, detalhes: detalhes as object | undefined },
+    data: {
+      usuario: input.usuario,
+      acao: input.acao,
+      tabela: input.tabela,
+      registroId: input.registroId,
+      dadosAnteriores: input.dadosAnteriores as object | undefined,
+      dadosNovos: input.dadosNovos as object | undefined,
+    },
   });
 }

@@ -1,4 +1,4 @@
 export type JwtPayload = {
   sub: string;
-  role: 'admin' | 'gestor' | 'viewer';
+  role: 'admin' | 'gestor' | 'visualizador';
 };
