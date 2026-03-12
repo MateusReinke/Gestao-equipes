@@ -41,9 +41,6 @@ cp .env.example .env
 
 ```env
 DATABASE_URL=postgresql://admin:SUA_SENHA@postgres:5432/gestao-bd?schema=public
-POSTGRES_PORT=55432
-BACKEND_PORT=54000
-FRONTEND_PORT=53000
 ```
 
 - Evite colar variáveis com `\n` literal na mesma linha. Cada variável deve ficar em uma linha separada.
