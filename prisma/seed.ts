@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -7,16 +8,16 @@ async function main() {
   for (const nome of equipes) {
     await prisma.team.upsert({
       where: { id: equipes.indexOf(nome) + 1 },
-      update: {},
-      create: { nome: `Equipe ${nome}` },
+      update: { nome },
+      create: { nome, descricao: `Equipe ${nome}`, ativo: true },
     });
   }
 
   const turnos = [
-    { nome: 'T1', horaInicio: '08:00', horaFim: '17:00', descricao: 'Turno comercial' },
-    { nome: 'T2', horaInicio: '17:00', horaFim: '01:00', descricao: 'Turno tarde/noite' },
-    { nome: 'T3', horaInicio: '01:00', horaFim: '08:00', descricao: 'Turno madrugada' },
-    { nome: 'Plantão', horaInicio: '00:00', horaFim: '23:59', descricao: 'Sobreaviso' },
+    { nome: 'T1', horaInicio: '08:00', horaFim: '17:00', descricao: 'Turno comercial', tipo: 'normal' as const },
+    { nome: 'T2', horaInicio: '17:00', horaFim: '01:00', descricao: 'Turno tarde/noite', tipo: 'normal' as const },
+    { nome: 'T3', horaInicio: '01:00', horaFim: '08:00', descricao: 'Turno madrugada', tipo: 'normal' as const },
+    { nome: 'Plantão', horaInicio: '00:00', horaFim: '23:59', descricao: 'Plantão diário', tipo: 'plantao' as const },
   ];
 
   for (const turno of turnos) {
@@ -27,14 +28,18 @@ async function main() {
     });
   }
 
-  const weekday = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-  for (let i = 0; i < weekday.length; i++) {
-    await prisma.weekdayConfig.upsert({
-      where: { diaSemana: i },
-      update: { descricao: weekday[i], ativo: i !== 0 && i !== 6 },
-      create: { diaSemana: i, descricao: weekday[i], ativo: i !== 0 && i !== 6 },
-    });
-  }
+  const adminPasswordHash = await bcrypt.hash('Admin@123', 10);
+  await prisma.user.upsert({
+    where: { email: 'admin@gestaoescala.local' },
+    update: { nome: 'Administrador', role: 'admin', ativo: true, senhaHash: adminPasswordHash },
+    create: {
+      nome: 'Administrador',
+      email: 'admin@gestaoescala.local',
+      senhaHash: adminPasswordHash,
+      role: 'admin',
+      ativo: true,
+    },
+  });
 }
 
 main().finally(() => prisma.$disconnect());

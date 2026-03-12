@@ -10,6 +10,7 @@ const menu = [
   'Plantões',
   'Férias',
   'Feriados',
+  'Relatórios',
   'Configurações',
 ];
 
