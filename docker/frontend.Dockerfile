@@ -8,6 +8,7 @@ WORKDIR /app/frontend
 RUN npm ci --include=dev
 
 COPY frontend ./
+RUN mkdir -p public
 RUN npm run build
 
 FROM node:22-alpine AS runtime
