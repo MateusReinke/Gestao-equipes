@@ -6,7 +6,7 @@ export default function ColaboradoresPage() {
     <DashboardLayout>
       <h2 className="text-2xl font-semibold">Gestão operacional</h2>
       <p className="mt-2 text-sm text-slate-300">
-        Abra o módulo desejado para editar equipes, colaboradores ou escalas sem carregar tudo de uma vez.
+        Cadastre, edite e exclua equipes, colaboradores e escalas com dados integrados à tela de clientes.
       </p>
       <div className="mt-4">
         <TeamManagementPanel />
