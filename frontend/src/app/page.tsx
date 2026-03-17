@@ -14,37 +14,79 @@ export default async function HomePage() {
 
   return (
     <DashboardLayout>
-      <h2 className="mb-6 text-2xl font-semibold">Dashboard de Escalas</h2>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <section className="card">
-          <h3 className="mb-2 font-semibold">Plantonistas Hoje</h3>
-          {(data?.onCallToday || []).map((p) => (
-            <p key={p.id}>{p.colaborador.nome} · {p.cliente?.nome || 'Sem cliente'}</p>
-          ))}
+          <p className="text-sm text-slate-400">Plantonistas hoje</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{(data?.onCallToday || []).length}</p>
         </section>
         <section className="card">
-          <h3 className="mb-2 font-semibold">Trabalhando Agora</h3>
-          {(data?.workingNow || []).map((w) => (
-            <p key={w.id}>{w.colaborador.nome} · {w.turno.nome}</p>
-          ))}
+          <p className="text-sm text-slate-400">Trabalhando agora</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{(data?.workingNow || []).length}</p>
         </section>
         <section className="card">
-          <h3 className="mb-2 font-semibold">Em Férias</h3>
-          {(data?.vacations || []).map((v) => (
-            <p key={v.id}>{v.colaborador.nome}</p>
-          ))}
+          <p className="text-sm text-slate-400">Em férias</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{(data?.vacations || []).length}</p>
         </section>
-        <section className="card md:col-span-2 xl:col-span-3">
-          <h3 className="mb-2 font-semibold">Próximas Trocas / Calendário</h3>
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {(data?.nextShifts || []).map((s) => (
-              <p key={s.id}>{new Date(s.data).toLocaleDateString('pt-BR')} - {s.colaborador.nome} ({s.turno.nome})</p>
+        <section className="card">
+          <p className="text-sm text-slate-400">Feriados cadastrados</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{(data?.holidays || []).length}</p>
+        </section>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <section className="card xl:col-span-1">
+          <h3 className="mb-3 font-semibold text-white">Plantonistas hoje</h3>
+          <div className="space-y-2 text-sm text-slate-300">
+            {(data?.onCallToday || []).map((p) => (
+              <p key={p.id} className="rounded-lg border border-slate-800 bg-slate-950/40 p-2">
+                {p.colaborador.nome} · {p.cliente?.nome || 'Sem cliente'}
+              </p>
             ))}
           </div>
-          <h4 className="mt-4 font-semibold">Feriados</h4>
-          {(data?.holidays || []).map((h) => (
-            <p key={h.id} className="text-amber-300">{new Date(h.data).toLocaleDateString('pt-BR')} · {h.descricao} ({h.tipo})</p>
-          ))}
+        </section>
+
+        <section className="card xl:col-span-1">
+          <h3 className="mb-3 font-semibold text-white">Trabalhando agora</h3>
+          <div className="space-y-2 text-sm text-slate-300">
+            {(data?.workingNow || []).map((w) => (
+              <p key={w.id} className="rounded-lg border border-slate-800 bg-slate-950/40 p-2">
+                {w.colaborador.nome} · {w.turno.nome}
+              </p>
+            ))}
+          </div>
+        </section>
+
+        <section className="card xl:col-span-1">
+          <h3 className="mb-3 font-semibold text-white">Em férias</h3>
+          <div className="space-y-2 text-sm text-slate-300">
+            {(data?.vacations || []).map((v) => (
+              <p key={v.id} className="rounded-lg border border-slate-800 bg-slate-950/40 p-2">
+                {v.colaborador.nome}
+              </p>
+            ))}
+          </div>
+        </section>
+
+        <section className="card xl:col-span-2">
+          <h3 className="mb-3 font-semibold text-white">Próximas escalas</h3>
+          <div className="grid gap-2 md:grid-cols-2">
+            {(data?.nextShifts || []).map((s) => (
+              <p key={s.id} className="rounded-lg border border-slate-800 bg-slate-950/40 p-2 text-sm text-slate-300">
+                {new Date(s.data).toLocaleDateString('pt-BR')} · {s.colaborador.nome} ({s.turno.nome})
+              </p>
+            ))}
+          </div>
+        </section>
+
+        <section className="card xl:col-span-1">
+          <h3 className="mb-3 font-semibold text-white">Feriados</h3>
+          <div className="space-y-2 text-sm">
+            {(data?.holidays || []).map((h) => (
+              <p key={h.id} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2 text-amber-200">
+                {new Date(h.data).toLocaleDateString('pt-BR')} · {h.descricao}
+              </p>
+            ))}
+          </div>
         </section>
       </div>
     </DashboardLayout>

@@ -3,6 +3,8 @@ ARG NODE_ENV=development
 ENV NODE_ENV=${NODE_ENV}
 WORKDIR /app
 
+RUN apk add --no-cache openssl
+
 COPY backend/package*.json ./backend/
 COPY prisma ./prisma
 WORKDIR /app/backend
@@ -14,6 +16,8 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
+
+RUN apk add --no-cache openssl
 
 COPY backend/package*.json ./backend/
 COPY prisma ./prisma
