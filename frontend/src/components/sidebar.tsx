@@ -5,14 +5,9 @@ import { usePathname } from 'next/navigation';
 import {
   BarChart3,
   Briefcase,
-  CalendarCheck2,
   CalendarCog,
-  CalendarDays,
-  Cog,
   LayoutDashboard,
-  MoonStar,
   ShieldCheck,
-  Sunrise,
   Users,
   UserSquare2,
 } from 'lucide-react';
@@ -28,19 +23,12 @@ const menuSections = [
       { label: 'Equipes', href: '/equipes', icon: Users },
       { label: 'Clientes', href: '/clientes', icon: Briefcase },
       { label: 'Colaboradores', href: '/colaboradores', icon: UserSquare2 },
-      { label: 'Turnos', href: '/turnos', icon: Sunrise },
       { label: 'Escalas', href: '/escalas', icon: CalendarCog },
-      { label: 'Plantões', href: '/plantoes', icon: MoonStar },
     ],
   },
   {
-    title: 'Calendário',
-    items: [
-      { label: 'Férias', href: '/ferias', icon: CalendarDays },
-      { label: 'Feriados', href: '/feriados', icon: CalendarCheck2 },
-      { label: 'Relatórios', href: '/relatorios', icon: BarChart3 },
-      { label: 'Configurações', href: '/configuracoes', icon: Cog },
-    ],
+    title: 'Análises',
+    items: [{ label: 'Relatórios', href: '/relatorios', icon: BarChart3 }],
   },
 ];
 

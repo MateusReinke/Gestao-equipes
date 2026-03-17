@@ -13,10 +13,14 @@ import {
 
 type CollaboratorForm = Omit<Collaborator, 'id'>;
 type TeamForm = Omit<Team, 'id'>;
+type ManagementSection = 'equipes' | 'colaboradores' | 'escalas';
+
+type TeamManagementPanelProps = {
+  section?: ManagementSection;
+};
 
 const shiftOptions: ShiftType[] = ['Manhã', 'Tarde', 'Noite', 'Plantão'];
 const workModels: WorkModel[] = ['Remoto', 'Híbrido', 'Presencial'];
-
 const defaultTeamForm: TeamForm = { nome: '', descricao: '' };
 
 function buildDefaultCollaborator(teams: Team[]): CollaboratorForm {
@@ -39,11 +43,12 @@ function buildDefaultCollaborator(teams: Team[]): CollaboratorForm {
   };
 }
 
-export function TeamManagementPanel() {
+export function TeamManagementPanel({ section }: TeamManagementPanelProps) {
   const { data, setData } = useOperationalData();
   const { teams, collaborators, clients, schedules } = data;
+  const [activeSection, setActiveSection] = useState<ManagementSection | null>(null);
+  const currentSection = section ?? activeSection;
 
-  const [activeSection, setActiveSection] = useState<'equipes' | 'colaboradores' | 'escalas' | null>(null);
   const [teamForm, setTeamForm] = useState<TeamForm>(defaultTeamForm);
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
 
@@ -57,10 +62,6 @@ export function TeamManagementPanel() {
   });
 
   const scheduleGroupedByDate = useMemo(() => [...schedules].sort((a, b) => a.data.localeCompare(b.data)), [schedules]);
-
-  function toggleSection(sectionId: 'equipes' | 'colaboradores' | 'escalas') {
-    setActiveSection((prev) => (prev === sectionId ? null : sectionId));
-  }
 
   function resetCollaboratorForm() {
     setEditingCollaboratorId(null);
@@ -92,11 +93,6 @@ export function TeamManagementPanel() {
     resetTeamForm();
   }
 
-  function editTeam(team: Team) {
-    setTeamForm({ nome: team.nome, descricao: team.descricao });
-    setEditingTeamId(team.id);
-  }
-
   function removeTeam(teamId: string) {
     setData((prev) => {
       const fallbackTeamId = prev.teams.find((team) => team.id !== teamId)?.id ?? '';
@@ -113,7 +109,6 @@ export function TeamManagementPanel() {
 
   function saveCollaborator(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     if (!collaboratorForm.nome.trim() || !collaboratorForm.email.trim() || !collaboratorForm.equipeId) return;
 
     if (editingCollaboratorId) {
@@ -136,11 +131,6 @@ export function TeamManagementPanel() {
     setData((prev) => ({ ...prev, collaborators: [...prev.collaborators, newCollaborator] }));
     setScheduleForm((prev) => ({ ...prev, colaboradorId: newCollaborator.id }));
     resetCollaboratorForm();
-  }
-
-  function editCollaborator(collaborator: Collaborator) {
-    setEditingCollaboratorId(collaborator.id);
-    setCollaboratorForm({ ...collaborator });
   }
 
   function removeCollaborator(collaboratorId: string) {
@@ -168,10 +158,6 @@ export function TeamManagementPanel() {
     setScheduleForm((prev) => ({ ...prev, data: '' }));
   }
 
-  function removeSchedule(scheduleId: string) {
-    setData((prev) => ({ ...prev, schedules: prev.schedules.filter((item) => item.id !== scheduleId) }));
-  }
-
   function collaboratorName(id: string) {
     return collaborators.find((col) => col.id === id)?.nome ?? 'Não encontrado';
   }
@@ -192,27 +178,29 @@ export function TeamManagementPanel() {
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="card space-y-4">
-        <h3 className="text-lg font-semibold">Central de gestão integrada</h3>
-        <div className="grid gap-3 md:grid-cols-3">
-          {managementSections.map((section) => (
-            <button
-              key={section.id}
-              type="button"
-              onClick={() => toggleSection(section.id)}
-              className={`rounded border p-4 text-left ${activeSection === section.id ? 'border-sky-500 bg-sky-500/10' : 'border-slate-800 bg-slate-950'}`}
-            >
-              <p className="font-semibold">{section.title}</p>
-              <p className="mt-3 text-xs uppercase text-slate-400">{section.summary}</p>
-            </button>
-          ))}
+    <div className="space-y-4">
+      {!section && (
+        <div className="card space-y-3">
+          <h3 className="text-lg font-semibold">Central de gestão integrada</h3>
+          <div className="grid gap-3 md:grid-cols-3">
+            {managementSections.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveSection((prev) => (prev === item.id ? null : item.id))}
+                className={`rounded border p-4 text-left ${currentSection === item.id ? 'border-sky-500 bg-sky-500/10' : 'border-slate-800 bg-slate-950'}`}
+              >
+                <p className="font-semibold">{item.title}</p>
+                <p className="mt-3 text-xs uppercase text-slate-400">{item.summary}</p>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {activeSection === 'equipes' && (
+      {currentSection === 'equipes' && (
         <div className="card">
-          <h3 className="mb-3 text-lg font-semibold">1) Criar, editar e excluir equipes</h3>
+          <h3 className="mb-3 text-lg font-semibold">Cadastro de equipes</h3>
           <form className="grid gap-3 md:grid-cols-3" onSubmit={saveTeam}>
             <input className="rounded border border-slate-700 bg-slate-950 px-3 py-2" placeholder="Nome da equipe" value={teamForm.nome} onChange={(event) => setTeamForm((prev) => ({ ...prev, nome: event.target.value }))} />
             <input className="rounded border border-slate-700 bg-slate-950 px-3 py-2" placeholder="Descrição" value={teamForm.descricao} onChange={(event) => setTeamForm((prev) => ({ ...prev, descricao: event.target.value }))} />
@@ -227,7 +215,7 @@ export function TeamManagementPanel() {
                 <p className="font-medium">{team.nome}</p>
                 <p className="text-sm text-slate-300">{team.descricao || 'Sem descrição'}</p>
                 <div className="mt-2 flex gap-2 text-xs">
-                  <button className="rounded border border-amber-500 px-2 py-1" onClick={() => editTeam(team)} type="button">Editar</button>
+                  <button className="rounded border border-amber-500 px-2 py-1" onClick={() => { setTeamForm({ nome: team.nome, descricao: team.descricao }); setEditingTeamId(team.id); }} type="button">Editar</button>
                   <button className="rounded border border-rose-500 px-2 py-1" onClick={() => removeTeam(team.id)} type="button">Excluir</button>
                 </div>
               </li>
@@ -236,9 +224,9 @@ export function TeamManagementPanel() {
         </div>
       )}
 
-      {activeSection === 'colaboradores' && (
+      {currentSection === 'colaboradores' && (
         <div className="card">
-          <h3 className="mb-3 text-lg font-semibold">2) Formulário completo de colaboradores</h3>
+          <h3 className="mb-3 text-lg font-semibold">Cadastro de colaboradores</h3>
           <form className="grid gap-3 md:grid-cols-2" onSubmit={saveCollaborator}>
             <input required className="rounded border border-slate-700 bg-slate-950 px-3 py-2" placeholder="Nome" value={collaboratorForm.nome} onChange={(event) => setCollaboratorForm((prev) => ({ ...prev, nome: event.target.value }))} />
             <input required type="email" className="rounded border border-slate-700 bg-slate-950 px-3 py-2" placeholder="Email" value={collaboratorForm.email} onChange={(event) => setCollaboratorForm((prev) => ({ ...prev, email: event.target.value }))} />
@@ -258,7 +246,7 @@ export function TeamManagementPanel() {
             <select multiple className="rounded border border-slate-700 bg-slate-950 px-3 py-2" value={collaboratorForm.clientesIds} onChange={(event) => setCollaboratorForm((prev) => ({ ...prev, clientesIds: Array.from(event.target.selectedOptions, (opt) => opt.value) }))}>
               {clients.map((client: Client) => <option key={client.id} value={client.id}>{client.nome}</option>)}
             </select>
-            <div className="md:col-span-2 grid gap-2 md:grid-cols-4 text-sm">
+            <div className="md:col-span-2 grid gap-2 text-sm md:grid-cols-4">
               <label><input type="checkbox" checked={collaboratorForm.fazPlantao} onChange={(event) => setCollaboratorForm((prev) => ({ ...prev, fazPlantao: event.target.checked }))} /> Faz plantão</label>
               <label><input type="checkbox" checked={collaboratorForm.sobreAviso} onChange={(event) => setCollaboratorForm((prev) => ({ ...prev, sobreAviso: event.target.checked }))} /> Sobreaviso</label>
               <label><input type="checkbox" checked={collaboratorForm.recebeVr} onChange={(event) => setCollaboratorForm((prev) => ({ ...prev, recebeVr: event.target.checked }))} /> Recebe VR</label>
@@ -284,7 +272,7 @@ export function TeamManagementPanel() {
                     <td className="p-2">{teamName(col.equipeId)}<p className="text-slate-400">Gestor: {col.gestor || '-'}</p></td>
                     <td className="p-2">{col.modeloTrabalho}<p className="text-slate-400">Plantão: {col.fazPlantao ? 'Sim' : 'Não'} | Sobreaviso: {col.sobreAviso ? 'Sim' : 'Não'} | VR: {col.recebeVr ? 'Sim' : 'Não'}</p></td>
                     <td className="p-2">{clientNames(col.clientesIds)}<p className="text-slate-400">Nascimento: {col.dataNascimento || '-'} · Contratação: {col.dataContratacao || '-'}</p></td>
-                    <td className="p-2"><div className="flex gap-2"><button className="rounded border border-amber-500 px-2 py-1" type="button" onClick={() => editCollaborator(col)}>Editar</button><button className="rounded border border-rose-500 px-2 py-1" type="button" onClick={() => removeCollaborator(col.id)}>Excluir</button></div></td>
+                    <td className="p-2"><div className="flex gap-2"><button className="rounded border border-amber-500 px-2 py-1" type="button" onClick={() => { setEditingCollaboratorId(col.id); setCollaboratorForm({ ...col }); }}>Editar</button><button className="rounded border border-rose-500 px-2 py-1" type="button" onClick={() => removeCollaborator(col.id)}>Excluir</button></div></td>
                   </tr>
                 ))}
               </tbody>
@@ -293,9 +281,9 @@ export function TeamManagementPanel() {
         </div>
       )}
 
-      {activeSection === 'escalas' && (
+      {currentSection === 'escalas' && (
         <div className="card">
-          <h3 className="mb-3 text-lg font-semibold">3) Escalas integradas</h3>
+          <h3 className="mb-3 text-lg font-semibold">Cadastro de escalas</h3>
           <form className="grid gap-3 md:grid-cols-4" onSubmit={addScheduleEntry}>
             <select required className="rounded border border-slate-700 bg-slate-950 px-3 py-2" value={scheduleForm.colaboradorId} onChange={(event) => setScheduleForm((prev) => ({ ...prev, colaboradorId: event.target.value }))}>
               <option value="">Selecione o colaborador</option>
@@ -310,7 +298,7 @@ export function TeamManagementPanel() {
           <div className="mt-4 space-y-2">
             {scheduleGroupedByDate.map((entry) => (
               <div key={entry.id} className="flex items-center justify-between rounded border border-slate-800 bg-slate-950 px-3 py-2 text-sm">
-                <span>{entry.data}</span><span>{collaboratorName(entry.colaboradorId)}</span><span>{entry.turno}</span><button className="rounded border border-rose-500 px-2 py-1" type="button" onClick={() => removeSchedule(entry.id)}>Excluir</button>
+                <span>{entry.data}</span><span>{collaboratorName(entry.colaboradorId)}</span><span>{entry.turno}</span><button className="rounded border border-rose-500 px-2 py-1" type="button" onClick={() => setData((prev) => ({ ...prev, schedules: prev.schedules.filter((item) => item.id !== entry.id) }))}>Excluir</button>
               </div>
             ))}
             {scheduleGroupedByDate.length === 0 && <p className="text-sm text-slate-300">Nenhuma escala cadastrada.</p>}
@@ -318,7 +306,7 @@ export function TeamManagementPanel() {
         </div>
       )}
 
-      {activeSection === null && <div className="rounded border border-dashed border-slate-700 p-4 text-sm text-slate-300">Nenhum módulo aberto.</div>}
+      {!section && !currentSection && <div className="rounded border border-dashed border-slate-700 p-4 text-sm text-slate-300">Selecione uma área para começar.</div>}
     </div>
   );
 }
