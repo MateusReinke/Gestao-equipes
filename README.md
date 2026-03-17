@@ -32,6 +32,29 @@ cp .env.example .env
 3. No Coolify, mantenha as mesmas variáveis no painel de Environment (o projeto já possui defaults no `docker-compose.yml`).
 4. Se você roda muitos projetos no mesmo host, altere as portas de host: `POSTGRES_PORT`, `BACKEND_PORT` e `FRONTEND_PORT`.
 
+### Deploy rápido para testes (copiar e colar no Coolify)
+
+Use exatamente estas variáveis para subir sem ajustes iniciais:
+
+```env
+POSTGRES_USER=gestao
+POSTGRES_PASSWORD=gestao123
+POSTGRES_DB=gestao_escalas
+POSTGRES_PORT=55432
+
+DATABASE_URL=postgresql://gestao:gestao123@postgres:5432/gestao_escalas?schema=public
+APP_PORT=4000
+BACKEND_PORT=54000
+NODE_ENV=production
+JWT_SECRET=change_me
+
+FRONTEND_PORT=53000
+API_INTERNAL_URL=http://backend:4000
+NEXT_PUBLIC_API_URL=http://backend:4000
+```
+
+> Depois dos testes, troque principalmente: `POSTGRES_PASSWORD` e `JWT_SECRET`.
+
 > Observação: para build do Next.js, mantenha `NODE_ENV=production` (Build-time e Runtime) para evitar inconsistências durante `next build`. Neste projeto, as imagens já instalam dependências de build com `npm ci --include=dev`.
 
 ### Troubleshooting (Coolify)
@@ -59,7 +82,11 @@ JWT_SECRET=change_me
 ### Frontend
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:54000
+# URL interna para chamadas server-side do Next dentro do Docker
+API_INTERNAL_URL=http://backend:4000
+
+# URL pública usada pelo navegador
+NEXT_PUBLIC_API_URL=http://backend:4000
 ```
 
 ## Subir com Docker (recomendado)
