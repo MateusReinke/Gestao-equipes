@@ -4,9 +4,9 @@ import { TeamManagementPanel } from '@/components/team-management';
 export default function ColaboradoresPage() {
   return (
     <DashboardLayout>
-      <h2 className="text-2xl font-semibold">Gestão de colaboradores, equipes e escalas</h2>
+      <h2 className="text-2xl font-semibold">Gestão operacional</h2>
       <p className="mt-2 text-sm text-slate-300">
-        Cadastre colaboradores com dados essenciais, monte equipes e crie escalas de trabalho em uma única tela.
+        Abra o módulo desejado para editar equipes, colaboradores ou escalas sem carregar tudo de uma vez.
       </p>
       <div className="mt-4">
         <TeamManagementPanel />
