@@ -76,6 +76,7 @@ function createId(prefix: string) {
 }
 
 export function TeamManagementPanel() {
+  const [activeSection, setActiveSection] = useState<'equipes' | 'colaboradores' | 'escalas' | null>(null);
   const [teamForm, setTeamForm] = useState({ nome: '', descricao: '' });
   const [teams, setTeams] = useState<Team[]>(defaultTeams);
   const [collaboratorForm, setCollaboratorForm] = useState<CollaboratorForm>(defaultCollaborator);
@@ -147,9 +148,67 @@ export function TeamManagementPanel() {
     return [...scheduleEntries].sort((a, b) => a.data.localeCompare(b.data));
   }, [scheduleEntries]);
 
+  const managementSections = [
+    {
+      id: 'equipes' as const,
+      title: 'Gestão de equipes',
+      description: 'Crie e organize as torres e frentes de atuação.',
+      summary: `${teams.length} equipes cadastradas`
+    },
+    {
+      id: 'colaboradores' as const,
+      title: 'Gestão de colaboradores',
+      description: 'Cadastre e ajuste dados de contato, cargo e vínculo.',
+      summary: `${collaborators.length} colaboradores cadastrados`
+    },
+    {
+      id: 'escalas' as const,
+      title: 'Gestão de escalas',
+      description: 'Monte a escala operacional por colaborador e turno.',
+      summary: `${scheduleEntries.length} lançamentos de escala`
+    }
+  ];
+
+  function toggleSection(sectionId: 'equipes' | 'colaboradores' | 'escalas') {
+    setActiveSection((prev) => (prev === sectionId ? null : sectionId));
+  }
+
   return (
     <div className="space-y-6">
-      <div className="card">
+      <div className="card space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold">Central de gestão</h3>
+          <p className="text-sm text-slate-300">
+            Escolha uma área para abrir somente o módulo que deseja editar.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          {managementSections.map((section) => {
+            const isActive = activeSection === section.id;
+
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => toggleSection(section.id)}
+                className={`rounded border p-4 text-left transition ${
+                  isActive
+                    ? 'border-sky-500 bg-sky-500/10'
+                    : 'border-slate-800 bg-slate-950 hover:border-slate-600'
+                }`}
+              >
+                <p className="font-semibold">{section.title}</p>
+                <p className="mt-1 text-sm text-slate-300">{section.description}</p>
+                <p className="mt-3 text-xs uppercase tracking-wide text-slate-400">{section.summary}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {activeSection === 'equipes' && (
+        <div className="card">
         <h3 className="mb-3 text-lg font-semibold">1) Cadastro de equipes</h3>
         <form className="grid gap-3 md:grid-cols-3" onSubmit={addTeam}>
           <input
@@ -178,8 +237,10 @@ export function TeamManagementPanel() {
           ))}
         </ul>
       </div>
+      )}
 
-      <div className="card">
+      {activeSection === 'colaboradores' && (
+        <div className="card">
         <h3 className="mb-3 text-lg font-semibold">2) Cadastro de colaboradores</h3>
         <form className="grid gap-3 md:grid-cols-2" onSubmit={addCollaborator}>
           <input
@@ -273,8 +334,10 @@ export function TeamManagementPanel() {
           </table>
         </div>
       </div>
+      )}
 
-      <div className="card">
+      {activeSection === 'escalas' && (
+        <div className="card">
         <h3 className="mb-3 text-lg font-semibold">3) Montagem de escala</h3>
         <form className="grid gap-3 md:grid-cols-4" onSubmit={addScheduleEntry}>
           <select
@@ -327,6 +390,13 @@ export function TeamManagementPanel() {
           ))}
         </div>
       </div>
+      )}
+
+      {activeSection === null && (
+        <div className="rounded border border-dashed border-slate-700 p-4 text-sm text-slate-300">
+          Nenhum módulo aberto. Clique em uma opção da Central de gestão para começar.
+        </div>
+      )}
     </div>
   );
 }
