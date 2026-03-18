@@ -19,11 +19,21 @@ const metricLabels = [
   ['Escalas configuradas', 'activeScales'],
 ] as const;
 
+const emptyDashboard: DashboardData = {
+  metrics: { clients: 0, teams: 0, collaborators: 0, currentOnCall: 0, activeVacations: 0, activeScales: 0 },
+  currentOnCall: [],
+  upcomingOnCall: [],
+  vacations: [],
+  clients: [],
+};
+
 export default async function HomePage() {
   const { data, error } = await fetchApiSafe<DashboardData>('/api/dashboard', emptyDashboard);
 
   return (
     <DashboardLayout>
+      <DataStatus error={error} />
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         {metricLabels.map(([label, key]) => (
           <section key={key} className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
