@@ -1,5 +1,6 @@
+import { DataStatus } from '@/components/data-status';
 import { DashboardLayout } from '@/components/layout';
-import { fetchApi } from '@/lib/api';
+import { fetchApiSafe } from '@/lib/api';
 
 type DashboardData = {
   metrics: { clients: number; teams: number; collaborators: number; currentOnCall: number; activeVacations: number; activeScales: number };
@@ -19,7 +20,7 @@ const metricLabels = [
 ] as const;
 
 export default async function HomePage() {
-  const data = await fetchApi<DashboardData>('/api/dashboard');
+  const { data, error } = await fetchApiSafe<DashboardData>('/api/dashboard', emptyDashboard);
 
   return (
     <DashboardLayout>
