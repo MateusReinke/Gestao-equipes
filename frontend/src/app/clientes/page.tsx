@@ -1,15 +1,30 @@
+import { DataStatus } from '@/components/data-status';
 import { DashboardLayout } from '@/components/layout';
-import { ClientManagementPanel } from '@/components/client-management';
+import { fetchApiSafe } from '@/lib/api';
 
-export default function Page() {
+type Client = { id: number; nome: string; idWhatsapp: string; escalation: string; ativo: boolean; responsavelInterno: { nome: string; email: string; telefone: string; equipe: { nome: string } }; equipes: Array<{ id: number; nome: string }> };
+
+export default async function Page() {
+  const { data: clients, error } = await fetchApiSafe<Client[]>('/api/clientes', []);
   return (
     <DashboardLayout>
-      <h2 className="text-2xl font-semibold">Clientes</h2>
-      <p className="mt-2 text-sm text-slate-300">
-        Controle os clientes, o tipo de atendimento (remoto/presencial/híbrido) e os colaboradores responsáveis.
-      </p>
-      <div className="mt-4">
-        <ClientManagementPanel />
+      <DataStatus error={error} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        {clients.length ? clients.map((client) => (
+          <section key={client.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-xl font-semibold">{client.nome}</h2>
+              <span className={`rounded-full px-3 py-1 text-xs ${client.ativo ? 'bg-emerald-500/15 text-emerald-200' : 'bg-rose-500/15 text-rose-200'}`}>{client.ativo ? 'Ativo' : 'Inativo'}</span>
+            </div>
+            <dl className="mt-4 grid gap-3 text-sm text-slate-300">
+              <div><dt className="text-slate-500">WhatsApp ID</dt><dd>{client.idWhatsapp}</dd></div>
+              <div><dt className="text-slate-500">Escalation</dt><dd>{client.escalation}</dd></div>
+              <div><dt className="text-slate-500">Responsável interno</dt><dd>{client.responsavelInterno.nome} · {client.responsavelInterno.equipe.nome}</dd></div>
+              <div><dt className="text-slate-500">Contato</dt><dd>{client.responsavelInterno.email} · {client.responsavelInterno.telefone}</dd></div>
+              <div><dt className="text-slate-500">Equipes vinculadas</dt><dd>{client.equipes.map((team) => team.nome).join(', ')}</dd></div>
+            </dl>
+          </section>
+        )) : <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-slate-400">Nenhum cliente disponível no momento.</div>}
       </div>
     </DashboardLayout>
   );
