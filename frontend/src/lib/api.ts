@@ -35,3 +35,13 @@ export async function fetchApi<T>(path: string): Promise<T> {
 
   return (await response.json()) as T;
 }
+
+export async function fetchApiSafe<T>(path: string, fallback: T): Promise<{ data: T; error: string | null }> {
+  try {
+    const data = await fetchApi<T>(path);
+    return { data, error: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Falha inesperada ao carregar dados do painel.';
+    return { data: fallback, error: message };
+  }
+}
