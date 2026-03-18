@@ -7,8 +7,31 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum ShiftType {
-  normal
+enum UserRole {
+  admin
+  gestor
+}
+
+enum ContractType {
+  clt
+  pj
+  terceirizado
+  estagio
+}
+
+enum WorkModel {
+  presencial
+  hibrido
+  remoto
+}
+
+enum ScaleType {
+  doze_por_trinta_seis
+  cinco_por_dois
+  personalizada
+}
+
+enum OnCallType {
   plantao
   sobreaviso
 }
@@ -19,149 +42,144 @@ enum VacationStatus {
   rejeitado
 }
 
-enum HolidayType {
-  nacional
-  estadual
-  municipal
-  empresa
-}
-
-enum UserRole {
-  admin
-  gestor
-  visualizador
-}
-
-model Team {
-  id            Int            @id @default(autoincrement())
-  nome          String
-  descricao     String?
-  ativo         Boolean        @default(true)
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-  colaboradores Collaborator[]
-
-  @@map("equipes")
-}
-
 model Client {
-  id        Int       @id @default(autoincrement())
-  nome      String
-  descricao String?
-  contato   String?
-  telefone  String?
-  ativo     Boolean   @default(true)
-  createdAt DateTime  @default(now()) @map("created_at")
-  escalas   Schedule[]
-  plantoes  OnCall[]
+  id                    Int            @id @default(autoincrement())
+  nome                  String
+  idWhatsapp            String         @map("id_whatsapp")
+  escalation            String
+  responsavelInternoId  Int            @map("responsavel_interno_id")
+  ativo                 Boolean        @default(true)
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+  responsavelInterno    Collaborator   @relation("ClientResponsible", fields: [responsavelInternoId], references: [id])
+  equipes               Team[]
+  escalas               Scale[]
+  plantoes              OnCall[]
 
   @@map("clientes")
 }
 
-model Collaborator {
-  id          Int        @id @default(autoincrement())
+model Team {
+  id          Int               @id @default(autoincrement())
   nome        String
-  email       String     @unique
-  telefone    String?
-  cargo       String?
-  equipeId    Int        @map("equipe_id")
-  ativo       Boolean    @default(true)
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
-  equipe      Team       @relation(fields: [equipeId], references: [id])
-  escalas     Schedule[]
-  plantoes    OnCall[]
-  ferias      Vacation[]
+  clienteId   Int?              @map("cliente_id")
+  ativo       Boolean           @default(true)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  cliente     Client?           @relation(fields: [clienteId], references: [id])
+  colaboradores Collaborator[]
+  gestores    ManagerTeam[]
+
+  @@map("equipes")
+}
+
+model Collaborator {
+  id                    Int               @id @default(autoincrement())
+  nome                  String
+  email                 String            @unique
+  telefone              String
+  equipeId              Int               @map("equipe_id")
+  tipoContrato          ContractType      @map("tipo_contrato")
+  modeloTrabalho        WorkModel         @map("modelo_trabalho")
+  ativo                 Boolean           @default(true)
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+  equipe                Team              @relation(fields: [equipeId], references: [id])
+  clientesResponsavel   Client[]          @relation("ClientResponsible")
+  usuarios              User[]
+  escalas               ScaleAssignment[]
+  plantoes              OnCall[]
+  ferias                Vacation[]
 
   @@map("colaboradores")
 }
 
-model Shift {
-  id          Int       @id @default(autoincrement())
-  nome        String    @unique
-  horaInicio  String    @map("hora_inicio")
-  horaFim     String    @map("hora_fim")
-  descricao   String?
-  tipo        ShiftType @default(normal)
-  ativo       Boolean   @default(true)
-  escalas     Schedule[]
-
-  @@map("turnos")
-}
-
-model Schedule {
-  id            Int          @id @default(autoincrement())
-  data          DateTime     @db.Date
-  colaboradorId Int          @map("colaborador_id")
-  turnoId       Int          @map("turno_id")
-  clienteId     Int?         @map("cliente_id")
-  observacao    String?
-  createdAt     DateTime     @default(now()) @map("created_at")
-  colaborador   Collaborator @relation(fields: [colaboradorId], references: [id])
-  turno         Shift        @relation(fields: [turnoId], references: [id])
-  cliente       Client?      @relation(fields: [clienteId], references: [id])
-
-  @@unique([data, colaboradorId])
-  @@map("escalas")
-}
-
-model OnCall {
-  id            Int          @id @default(autoincrement())
-  dataInicio    DateTime     @map("data_inicio")
-  dataFim       DateTime     @map("data_fim")
-  colaboradorId Int          @map("colaborador_id")
-  clienteId     Int?         @map("cliente_id")
-  descricao     String?
-  colaborador   Collaborator @relation(fields: [colaboradorId], references: [id])
-  cliente       Client?      @relation(fields: [clienteId], references: [id])
-
-  @@map("plantao_periodos")
-}
-
-model Vacation {
-  id            Int            @id @default(autoincrement())
-  colaboradorId Int            @map("colaborador_id")
-  dataInicio    DateTime       @map("data_inicio") @db.Date
-  dataFim       DateTime       @map("data_fim") @db.Date
-  status        VacationStatus @default(pendente)
-  observacao    String?
-  colaborador   Collaborator   @relation(fields: [colaboradorId], references: [id])
-
-  @@map("ferias")
-}
-
-model Holiday {
-  id        Int         @id @default(autoincrement())
-  data      DateTime    @db.Date
-  descricao String
-  tipo      HolidayType
-
-  @@unique([data, descricao])
-  @@map("feriados")
-}
-
 model User {
-  id           Int      @id @default(autoincrement())
-  nome         String
-  email        String   @unique
-  senhaHash    String   @map("senha_hash")
-  role         UserRole @default(visualizador)
-  ativo        Boolean  @default(true)
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id              Int           @id @default(autoincrement())
+  nome            String
+  email           String        @unique
+  senhaHash       String        @map("senha_hash")
+  role            UserRole
+  ativo           Boolean       @default(true)
+  colaboradorId   Int?          @map("colaborador_id")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  colaborador     Collaborator? @relation(fields: [colaboradorId], references: [id])
+  gestorEquipes   ManagerTeam[]
 
   @@map("usuarios")
 }
 
-model AuditLog {
-  id             Int      @id @default(autoincrement())
-  usuario        String
-  acao           String
-  tabela         String
-  registroId     String?  @map("registro_id")
-  dadosAnteriores Json?   @map("dados_anteriores")
-  dadosNovos     Json?    @map("dados_novos")
-  data           DateTime @default(now())
+model ManagerTeam {
+  id         Int      @id @default(autoincrement())
+  gestorId   Int      @map("gestor_id")
+  equipeId   Int      @map("equipe_id")
+  gestor     User     @relation(fields: [gestorId], references: [id])
+  equipe     Team     @relation(fields: [equipeId], references: [id])
 
-  @@map("auditoria")
+  @@unique([gestorId, equipeId])
+  @@map("gestor_equipes")
+}
+
+model Scale {
+  id          Int               @id @default(autoincrement())
+  nome        String
+  tipo        ScaleType
+  descricao   String
+  clienteId   Int?              @map("cliente_id")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  cliente     Client?           @relation(fields: [clienteId], references: [id])
+  colaboradores ScaleAssignment[]
+  detalhes    ScaleDetail[]
+
+  @@map("escalas")
+}
+
+model ScaleAssignment {
+  id              Int           @id @default(autoincrement())
+  colaboradorId   Int           @map("colaborador_id")
+  escalaId        Int           @map("escala_id")
+  dataInicio      DateTime      @map("data_inicio") @db.Date
+  dataFim         DateTime?     @map("data_fim") @db.Date
+  colaborador     Collaborator  @relation(fields: [colaboradorId], references: [id])
+  escala          Scale         @relation(fields: [escalaId], references: [id])
+
+  @@map("escala_colaboradores")
+}
+
+model ScaleDetail {
+  id          Int       @id @default(autoincrement())
+  escalaId    Int       @map("escala_id")
+  diaSemana   Int       @map("dia_semana")
+  horaInicio  String    @map("hora_inicio")
+  horaFim     String    @map("hora_fim")
+  escala      Scale     @relation(fields: [escalaId], references: [id])
+
+  @@map("escala_detalhe")
+}
+
+model OnCall {
+  id              Int           @id @default(autoincrement())
+  colaboradorId   Int           @map("colaborador_id")
+  clienteId       Int?          @map("cliente_id")
+  data            DateTime      @db.Date
+  horaInicio      String        @map("hora_inicio")
+  horaFim         String        @map("hora_fim")
+  tipo            OnCallType
+  colaborador     Collaborator  @relation(fields: [colaboradorId], references: [id])
+  cliente         Client?       @relation(fields: [clienteId], references: [id])
+
+  @@map("plantoes")
+}
+
+model Vacation {
+  id              Int             @id @default(autoincrement())
+  colaboradorId   Int             @map("colaborador_id")
+  dataInicio      DateTime        @map("data_inicio") @db.Date
+  dataFim         DateTime        @map("data_fim") @db.Date
+  status          VacationStatus
+  colaborador     Collaborator    @relation(fields: [colaboradorId], references: [id])
+
+  @@map("ferias")
 }
