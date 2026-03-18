@@ -1,16 +1,14 @@
-import { DataStatus } from '@/components/data-status';
 import { DashboardLayout } from '@/components/layout';
-import { fetchApiSafe } from '@/lib/api';
+import { fetchApi } from '@/lib/api';
 
 type Manager = { id: number; nome: string; email: string; colaborador?: { nome: string } | null; gestorEquipes: Array<{ equipe: { id: number; nome: string } }> };
 
 export default async function GestoresPage() {
-  const { data: managers, error } = await fetchApiSafe<Manager[]>('/api/gestores', []);
+  const managers = await fetchApi<Manager[]>('/api/gestores');
   return (
     <DashboardLayout>
-      <DataStatus error={error} />
       <div className="grid gap-4 xl:grid-cols-2">
-        {managers.length ? managers.map((manager) => (
+        {managers.map((manager) => (
           <section key={manager.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <h2 className="text-xl font-semibold">{manager.nome}</h2>
             <p className="mt-1 text-sm text-slate-400">{manager.email}</p>
@@ -21,7 +19,7 @@ export default async function GestoresPage() {
               ))}
             </div>
           </section>
-        )) : <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-slate-400">Nenhum gestor disponível no momento.</div>}
+        ))}
       </div>
     </DashboardLayout>
   );

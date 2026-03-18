@@ -1,16 +1,15 @@
 import { DataStatus } from '@/components/data-status';
 import { DashboardLayout } from '@/components/layout';
-import { fetchApiSafe } from '@/lib/api';
+import { fetchApi } from '@/lib/api';
 
 type Client = { id: number; nome: string; idWhatsapp: string; escalation: string; ativo: boolean; responsavelInterno: { nome: string; email: string; telefone: string; equipe: { nome: string } }; equipes: Array<{ id: number; nome: string }> };
 
 export default async function Page() {
-  const { data: clients, error } = await fetchApiSafe<Client[]>('/api/clientes', []);
+  const clients = await fetchApi<Client[]>('/api/clientes');
   return (
     <DashboardLayout>
-      <DataStatus error={error} />
       <div className="grid gap-4 lg:grid-cols-2">
-        {clients.length ? clients.map((client) => (
+        {clients.map((client) => (
           <section key={client.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-xl font-semibold">{client.nome}</h2>
@@ -24,7 +23,7 @@ export default async function Page() {
               <div><dt className="text-slate-500">Equipes vinculadas</dt><dd>{client.equipes.map((team) => team.nome).join(', ')}</dd></div>
             </dl>
           </section>
-        )) : <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-slate-400">Nenhum cliente disponível no momento.</div>}
+        ))}
       </div>
     </DashboardLayout>
   );

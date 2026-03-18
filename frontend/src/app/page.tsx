@@ -10,14 +10,6 @@ type DashboardData = {
   clients: Array<{ id: number; nome: string; escalation: string; responsavelInterno: { nome: string } }>;
 };
 
-const emptyDashboard: DashboardData = {
-  metrics: { clients: 0, teams: 0, collaborators: 0, currentOnCall: 0, activeVacations: 0, activeScales: 0 },
-  currentOnCall: [],
-  upcomingOnCall: [],
-  vacations: [],
-  clients: [],
-};
-
 const metricLabels = [
   ['Clientes ativos', 'clients'],
   ['Equipes ativas', 'teams'],
@@ -32,7 +24,6 @@ export default async function HomePage() {
 
   return (
     <DashboardLayout>
-      <DataStatus error={error} />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         {metricLabels.map(([label, key]) => (
           <section key={key} className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
@@ -46,39 +37,39 @@ export default async function HomePage() {
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5 xl:col-span-1">
           <h2 className="text-lg font-semibold">Plantonistas atuais</h2>
           <div className="mt-4 space-y-3 text-sm">
-            {data.currentOnCall.length ? data.currentOnCall.map((item) => (
+            {data.currentOnCall.map((item) => (
               <div key={item.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
                 <p className="font-medium text-white">{item.colaborador.nome}</p>
                 <p className="text-slate-400">{item.colaborador.equipe.nome} · {item.cliente?.nome ?? 'Sem cliente'}</p>
                 <p className="text-sky-300">{item.horaInicio} às {item.horaFim} · {item.tipo}</p>
               </div>
-            )) : <p className="text-slate-400">Nenhum plantão ativo carregado.</p>}
+            ))}
           </div>
         </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5 xl:col-span-1">
           <h2 className="text-lg font-semibold">Próximos plantões</h2>
           <div className="mt-4 space-y-3 text-sm">
-            {data.upcomingOnCall.length ? data.upcomingOnCall.map((item) => (
+            {data.upcomingOnCall.map((item) => (
               <div key={item.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
                 <p className="font-medium text-white">{item.colaborador.nome}</p>
                 <p className="text-slate-400">{new Date(item.data).toLocaleDateString('pt-BR')} · {item.colaborador.equipe.nome}</p>
                 <p className="text-emerald-300">{item.horaInicio} às {item.horaFim} · {item.cliente?.nome ?? 'Cobertura interna'}</p>
               </div>
-            )) : <p className="text-slate-400">Nenhum próximo plantão disponível.</p>}
+            ))}
           </div>
         </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-5 xl:col-span-1">
           <h2 className="text-lg font-semibold">Clientes monitorados</h2>
           <div className="mt-4 space-y-3 text-sm">
-            {data.clients.length ? data.clients.map((client) => (
+            {data.clients.map((client) => (
               <div key={client.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
                 <p className="font-medium text-white">{client.nome}</p>
                 <p className="text-slate-400">Escalation: {client.escalation}</p>
                 <p className="text-amber-300">Responsável interno: {client.responsavelInterno.nome}</p>
               </div>
-            )) : <p className="text-slate-400">Nenhum cliente disponível.</p>}
+            ))}
           </div>
         </section>
       </div>
@@ -86,12 +77,12 @@ export default async function HomePage() {
       <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
         <h2 className="text-lg font-semibold">Férias ativas</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {data.vacations.length ? data.vacations.map((item) => (
+          {data.vacations.map((item) => (
             <div key={item.id} className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-sm text-rose-100">
               <p className="font-medium">{item.colaborador.nome}</p>
               <p>{new Date(item.dataInicio).toLocaleDateString('pt-BR')} até {new Date(item.dataFim).toLocaleDateString('pt-BR')}</p>
             </div>
-          )) : <p className="text-slate-400">Nenhuma férias ativa encontrada.</p>}
+          ))}
         </div>
       </section>
     </DashboardLayout>

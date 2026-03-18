@@ -1,17 +1,16 @@
 import { DataStatus } from '@/components/data-status';
 import { DashboardLayout } from '@/components/layout';
-import { fetchApiSafe } from '@/lib/api';
+import { fetchApi } from '@/lib/api';
 
 type Scale = { id: number; nome: string; tipo: string; descricao: string; cliente?: { nome: string } | null; detalhes: Array<{ id: number; diaSemana: number; horaInicio: string; horaFim: string }>; colaboradores: Array<{ id: number; colaborador: { nome: string; equipe: { nome: string } } }> };
 const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 export default async function EscalasPage() {
-  const { data: scales, error } = await fetchApiSafe<Scale[]>('/api/escalas', []);
+  const scales = await fetchApi<Scale[]>('/api/escalas');
   return (
     <DashboardLayout>
-      <DataStatus error={error} />
       <div className="space-y-4">
-        {scales.length ? scales.map((scale) => (
+        {scales.map((scale) => (
           <section key={scale.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -30,7 +29,7 @@ export default async function EscalasPage() {
               ))}
             </div>
           </section>
-        )) : <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-slate-400">Nenhuma escala disponível no momento.</div>}
+        ))}
       </div>
     </DashboardLayout>
   );
