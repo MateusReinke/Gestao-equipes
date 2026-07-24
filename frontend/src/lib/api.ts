@@ -36,6 +36,24 @@ export async function fetchApi<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+export async function postApi<T>(path: string, body: unknown): Promise<{ ok: true; data: T } | { ok: false; error: string; issues?: Record<string, string[] | undefined> }> {
+  const token = await getToken();
+  const response = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    return { ok: false, error: payload.error || `Erro ao enviar dados para ${path}`, issues: payload.issues };
+  }
+
+  return { ok: true, data: payload as T };
+}
+
 export async function fetchApiSafe<T>(path: string, fallback: T): Promise<{ data: T; error: string | null }> {
   try {
     const data = await fetchApi<T>(path);

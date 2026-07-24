@@ -15,6 +15,7 @@ router.get('/clientes/:id/plantonista', auth(), apiController.clientOnCall);
 router.get('/api/clientes', auth(), apiController.clients);
 router.get('/api/equipes', auth(), apiController.teams);
 router.get('/api/colaboradores', auth(), apiController.collaborators);
+router.post('/api/colaboradores', auth(), apiController.createCollaborator);
 router.get('/api/gestores', auth(['admin']), apiController.managers);
 router.get('/api/escalas', auth(), apiController.scales);
 router.get('/api/plantoes', auth(), apiController.onCalls);

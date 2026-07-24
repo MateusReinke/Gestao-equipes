@@ -1,9 +1,26 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { z } from 'zod';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { JwtPayload } from '../types/auth';
+
+const collaboratorSchema = z.object({
+  nome: z.string().trim().min(3, 'Nome deve ter ao menos 3 caracteres'),
+  email: z.string().trim().toLowerCase().email('E-mail inválido'),
+  telefone: z
+    .string()
+    .trim()
+    .regex(/^\d{10,11}$/, 'Telefone deve conter DDD + número (10 ou 11 dígitos)'),
+  cargo: z.string().trim().min(2, 'Cargo/função é obrigatório'),
+  equipeId: z.coerce.number().int().positive('Selecione uma equipe válida'),
+  tipoContrato: z.enum(['clt', 'pj', 'terceirizado', 'estagio']),
+  modeloTrabalho: z.enum(['presencial', 'hibrido', 'remoto']),
+  fazPlantao: z.coerce.boolean().default(false),
+  sobreAviso: z.coerce.boolean().default(false),
+  ativo: z.coerce.boolean().default(true),
+});
 
 function dayBounds(date = new Date()) {
   const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -180,6 +197,31 @@ export const apiController = {
     const teamIds = await getVisibleTeamIds((req as Request & { user?: JwtPayload }).user);
     const data = await prisma.collaborator.findMany({ where: { equipeId: { in: teamIds } }, include: { equipe: true, ferias: true } });
     return res.json(data);
+  },
+
+  async createCollaborator(req: Request, res: Response) {
+    const parsed = collaboratorSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos', issues: parsed.error.flatten().fieldErrors });
+    }
+
+    const teamIds = await getVisibleTeamIds((req as Request & { user?: JwtPayload }).user);
+    if (!teamIds.includes(parsed.data.equipeId)) {
+      return res.status(403).json({ error: 'Você não tem permissão para cadastrar colaboradores nesta equipe' });
+    }
+
+    const existing = await prisma.collaborator.findUnique({ where: { email: parsed.data.email } });
+    if (existing) {
+      return res.status(409).json({ error: 'Já existe um colaborador com este e-mail' });
+    }
+
+    const team = await prisma.team.findUnique({ where: { id: parsed.data.equipeId } });
+    if (!team) {
+      return res.status(400).json({ error: 'Equipe informada não existe' });
+    }
+
+    const collaborator = await prisma.collaborator.create({ data: parsed.data, include: { equipe: true } });
+    return res.status(201).json(collaborator);
   },
 
   async managers(_: Request, res: Response) {

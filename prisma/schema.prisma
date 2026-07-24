@@ -78,9 +78,12 @@ model Collaborator {
   nome                  String
   email                 String            @unique
   telefone              String
+  cargo                 String
   equipeId              Int               @map("equipe_id")
   tipoContrato          ContractType      @map("tipo_contrato")
   modeloTrabalho        WorkModel         @map("modelo_trabalho")
+  fazPlantao            Boolean           @default(false) @map("faz_plantao")
+  sobreAviso            Boolean           @default(false) @map("sobre_aviso")
   ativo                 Boolean           @default(true)
   createdAt             DateTime          @default(now()) @map("created_at")
   updatedAt             DateTime          @updatedAt @map("updated_at")
