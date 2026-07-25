@@ -26,11 +26,7 @@ WORKDIR /app/backend
 RUN npm ci --include=dev
 RUN npx prisma generate --schema ../prisma/schema.prisma
 
-# prisma/seed.ts vive em /app/prisma (irmão de /app/backend), fora da árvore de
-# ancestrais de /app/backend/node_modules. O resolvedor de módulos do Node sobe
-# a partir do arquivo requisitante (/app/prisma -> /app -> /), então este link
-# em /app/node_modules é o que permite `tsx ../prisma/seed.ts` encontrar
-# bcryptjs, @prisma/client etc. quando o entrypoint roda o seed.
+# Defesa extra para resolução de módulos de /app/prisma/seed*.ts (ver NODE_PATH em entrypoint.sh)
 RUN ln -sf /app/backend/node_modules /app/node_modules
 
 COPY --from=build /app/backend/dist ./dist

@@ -1,6 +1,14 @@
 #!/bin/sh
 set -e
 
+# prisma/seed.ts e seed.dev.ts vivem em /app/prisma (irmão de /app/backend, o
+# cwd deste script). A resolução de módulos do Node sobe a árvore de
+# diretórios a partir do arquivo requisitante, então nunca alcança
+# /app/backend/node_modules por conta própria. NODE_PATH resolve isso sem
+# depender de nenhuma camada de build/cache do Docker - é aplicado toda vez
+# que este script roda.
+export NODE_PATH="$(pwd)/node_modules"
+
 echo "[backend] Generating Prisma client"
 npx prisma generate --schema ../prisma/schema.prisma
 
