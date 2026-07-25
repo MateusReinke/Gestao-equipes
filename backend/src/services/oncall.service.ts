@@ -23,12 +23,15 @@ export function isTimeBetween(nowMinutes: number, start: string, end: string) {
 }
 
 export async function getCurrentOnCall(clientId: number | undefined, user?: JwtPayload) {
+  if (!user || user.activeTenantId == null) return [];
+  const tenantId = user.activeTenantId;
   const { start, end } = dayBounds();
   const visibleTeamIds = await getVisibleTeamIds(user);
   const nowMinutes = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();
 
-  const vacations = await vacationRepository.findApprovedInRange(start, end);
+  const vacations = await vacationRepository.findApprovedInRange(tenantId, start, end);
   const onCalls = await oncallRepository.findForDay({
+    tenantId,
     start,
     end,
     clientId,
@@ -40,12 +43,14 @@ export async function getCurrentOnCall(clientId: number | undefined, user?: JwtP
 }
 
 export async function getUpcomingOnCall(clientId: number | undefined, user?: JwtPayload) {
+  if (!user || user.activeTenantId == null) return [];
   const visibleTeamIds = await getVisibleTeamIds(user);
   const { start } = dayBounds();
-  return oncallRepository.findUpcoming({ start, clientId, teamIds: visibleTeamIds, take: 10 });
+  return oncallRepository.findUpcoming({ tenantId: user.activeTenantId, start, clientId, teamIds: visibleTeamIds, take: 10 });
 }
 
 export async function listOnCallsForUser(user?: JwtPayload) {
+  if (!user || user.activeTenantId == null) return [];
   const teamIds = await getVisibleTeamIds(user);
-  return oncallRepository.findByTeamIds(teamIds);
+  return oncallRepository.findByTeamIds(user.activeTenantId, teamIds);
 }

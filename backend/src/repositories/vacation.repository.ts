@@ -1,21 +1,27 @@
 import { prisma } from '../config/prisma';
 
 export const vacationRepository = {
-  findApprovedInRange(start: Date, end: Date) {
+  findApprovedInRange(tenantId: number, start: Date, end: Date) {
     return prisma.vacation.findMany({
-      where: { status: 'aprovado', dataInicio: { lt: end }, dataFim: { gte: start } },
+      where: { tenantId, status: 'aprovado', dataInicio: { lt: end }, dataFim: { gte: start } },
       select: { colaboradorId: true },
     });
   },
-  findApprovedInRangeForTeams(teamIds: number[], start: Date, end: Date) {
+  findApprovedInRangeForTeams(tenantId: number, teamIds: number[], start: Date, end: Date) {
     return prisma.vacation.findMany({
-      where: { status: 'aprovado', dataInicio: { lt: end }, dataFim: { gte: start }, colaborador: { equipeId: { in: teamIds } } },
+      where: {
+        tenantId,
+        status: 'aprovado',
+        dataInicio: { lt: end },
+        dataFim: { gte: start },
+        colaborador: { equipeId: { in: teamIds } },
+      },
       include: { colaborador: true },
     });
   },
-  findByTeamIds(teamIds: number[]) {
+  findByTeamIds(tenantId: number, teamIds: number[]) {
     return prisma.vacation.findMany({
-      where: { colaborador: { equipeId: { in: teamIds } } },
+      where: { tenantId, colaborador: { equipeId: { in: teamIds } } },
       include: { colaborador: { include: { equipe: true } } },
     });
   },

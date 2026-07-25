@@ -3,15 +3,15 @@ import { listClients, getClientResponsible, ClientNotFoundError } from '../servi
 import { getCurrentOnCall, getUpcomingOnCall } from '../services/oncall.service';
 
 export const clientController = {
-  async list(_req: Request, res: Response) {
-    const data = await listClients();
+  async list(req: Request, res: Response) {
+    const data = await listClients(req.user!.activeTenantId!);
     return res.json(data);
   },
 
   async responsible(req: Request, res: Response) {
     const clientId = Number(req.params.id);
     try {
-      const data = await getClientResponsible(clientId);
+      const data = await getClientResponsible(req.user!.activeTenantId!, clientId);
       return res.json(data);
     } catch (error) {
       if (error instanceof ClientNotFoundError) {

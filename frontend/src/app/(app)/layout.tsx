@@ -1,8 +1,12 @@
 import { ReactNode } from 'react';
-import { requireSession } from '@/lib/session';
+import { requireTenantSession } from '@/lib/session';
 import { DashboardLayout } from '@/components/layout';
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const { user } = await requireSession();
-  return <DashboardLayout user={user}>{children}</DashboardLayout>;
+  const session = await requireTenantSession();
+  return (
+    <DashboardLayout user={session.user} tenant={session.tenant} role={session.role}>
+      {children}
+    </DashboardLayout>
+  );
 }

@@ -25,27 +25,34 @@ export type CollaboratorInput = z.infer<typeof collaboratorSchema>;
 export class ForbiddenTeamError extends Error {}
 export class DuplicateEmailError extends Error {}
 export class TeamNotFoundError extends Error {}
+export class NoActiveTenantError extends Error {}
 
 export async function listCollaboratorsForUser(user?: JwtPayload) {
+  if (!user || user.activeTenantId == null) return [];
   const teamIds = await getVisibleTeamIds(user);
-  return collaboratorRepository.findByTeamIds(teamIds);
+  return collaboratorRepository.findByTeamIds(user.activeTenantId, teamIds);
 }
 
 export async function createCollaborator(data: CollaboratorInput, user?: JwtPayload) {
+  if (!user || user.activeTenantId == null) {
+    throw new NoActiveTenantError('Selecione um tenant ativo para cadastrar colaboradores');
+  }
+  const tenantId = user.activeTenantId;
+
   const teamIds = await getVisibleTeamIds(user);
   if (!teamIds.includes(data.equipeId)) {
     throw new ForbiddenTeamError('Você não tem permissão para cadastrar colaboradores nesta equipe');
   }
 
-  const existing = await collaboratorRepository.findByEmail(data.email);
+  const existing = await collaboratorRepository.findByEmail(tenantId, data.email);
   if (existing) {
     throw new DuplicateEmailError('Já existe um colaborador com este e-mail');
   }
 
-  const team = await teamRepository.findById(data.equipeId);
+  const team = await teamRepository.findById(tenantId, data.equipeId);
   if (!team) {
     throw new TeamNotFoundError('Equipe informada não existe');
   }
 
-  return collaboratorRepository.create(data);
+  return collaboratorRepository.create(tenantId, data);
 }

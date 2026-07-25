@@ -1,25 +1,25 @@
 import { prisma } from '../config/prisma';
 
 export const teamRepository = {
-  findAllIds() {
-    return prisma.team.findMany({ select: { id: true } });
+  findAllIds(tenantId: number) {
+    return prisma.team.findMany({ where: { tenantId }, select: { id: true } });
   },
-  findManagerTeamIds(userId: number) {
-    return prisma.managerTeam.findMany({ where: { gestorId: userId }, select: { equipeId: true } });
+  findManagerTeamIds(userId: number, tenantId: number) {
+    return prisma.managerTeam.findMany({ where: { gestorId: userId, tenantId }, select: { equipeId: true } });
   },
-  findByIds(teamIds: number[]) {
+  findByIds(tenantId: number, teamIds: number[]) {
     return prisma.team.findMany({
-      where: { id: { in: teamIds } },
+      where: { tenantId, id: { in: teamIds } },
       include: { cliente: true, colaboradores: true, gestores: { include: { gestor: true } } },
     });
   },
-  countByIds(teamIds: number[]) {
+  countByIds(tenantId: number, teamIds: number[]) {
     return prisma.team.findMany({
-      where: { id: { in: teamIds } },
+      where: { tenantId, id: { in: teamIds } },
       include: { cliente: true, _count: { select: { colaboradores: true } } },
     });
   },
-  findById(id: number) {
-    return prisma.team.findUnique({ where: { id } });
+  findById(tenantId: number, id: number) {
+    return prisma.team.findFirst({ where: { tenantId, id } });
   },
 };

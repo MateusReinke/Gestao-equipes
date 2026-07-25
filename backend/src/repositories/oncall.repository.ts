@@ -1,9 +1,10 @@
 import { prisma } from '../config/prisma';
 
 export const oncallRepository = {
-  findForDay(params: { start: Date; end: Date; clientId?: number; teamIds: number[]; excludeCollaboratorIds: number[] }) {
+  findForDay(params: { tenantId: number; start: Date; end: Date; clientId?: number; teamIds: number[]; excludeCollaboratorIds: number[] }) {
     return prisma.onCall.findMany({
       where: {
+        tenantId: params.tenantId,
         data: { gte: params.start, lt: params.end },
         clienteId: params.clientId,
         colaborador: {
@@ -15,9 +16,10 @@ export const oncallRepository = {
       include: { cliente: true, colaborador: { include: { equipe: true } } },
     });
   },
-  findUpcoming(params: { start: Date; clientId?: number; teamIds: number[]; take: number }) {
+  findUpcoming(params: { tenantId: number; start: Date; clientId?: number; teamIds: number[]; take: number }) {
     return prisma.onCall.findMany({
       where: {
+        tenantId: params.tenantId,
         data: { gte: params.start },
         clienteId: params.clientId,
         colaborador: { equipeId: { in: params.teamIds }, ativo: true },
@@ -27,9 +29,9 @@ export const oncallRepository = {
       take: params.take,
     });
   },
-  findByTeamIds(teamIds: number[]) {
+  findByTeamIds(tenantId: number, teamIds: number[]) {
     return prisma.onCall.findMany({
-      where: { colaborador: { equipeId: { in: teamIds } } },
+      where: { tenantId, colaborador: { equipeId: { in: teamIds } } },
       include: { cliente: true, colaborador: { include: { equipe: true } } },
       orderBy: [{ data: 'asc' }, { horaInicio: 'asc' }],
     });

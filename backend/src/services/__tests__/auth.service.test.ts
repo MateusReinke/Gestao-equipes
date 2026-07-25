@@ -2,61 +2,126 @@ import bcrypt from 'bcryptjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../repositories/user.repository', () => ({
-  userRepository: { findByEmail: vi.fn() },
+  userRepository: { findByEmailWithMemberships: vi.fn() },
+}));
+vi.mock('../../repositories/tenant.repository', () => ({
+  tenantRepository: { findById: vi.fn() },
 }));
 
 import { userRepository } from '../../repositories/user.repository';
-import { InvalidCredentialsError, login } from '../auth.service';
+import {
+  InvalidCredentialsError,
+  NoTenantAccessError,
+  TenantSelectionRequiredError,
+  login,
+} from '../auth.service';
 
-const mockedFindByEmail = vi.mocked(userRepository.findByEmail);
+const mockedFindByEmailWithMemberships = vi.mocked(userRepository.findByEmailWithMemberships);
 
-function fakeUser(overrides: Partial<Awaited<ReturnType<typeof userRepository.findByEmail>>> = {}) {
+function membership(tenantId: number, role: 'admin' | 'gestor', tenantNome = `Tenant ${tenantId}`) {
   return {
-    id: 1,
-    nome: 'Administrador',
-    email: 'admin@empresa.com',
-    senhaHash: '',
-    role: 'admin' as const,
-    ativo: true,
+    id: tenantId,
+    userId: 1,
+    tenantId,
+    role,
     colaboradorId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
+    tenant: { id: tenantId, nome: tenantNome, slug: `tenant-${tenantId}`, ativo: true, createdAt: new Date(), updatedAt: new Date() },
+  };
+}
+
+function fakeUser(overrides: Record<string, unknown> = {}, senhaHash: string) {
+  return {
+    id: 1,
+    nome: 'Usuário Teste',
+    email: 'usuario@empresa.com',
+    senhaHash,
+    ativo: true,
+    isGlobalAdmin: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    memberships: [],
     ...overrides,
   };
 }
 
 describe('auth.service login', () => {
   beforeEach(() => {
-    mockedFindByEmail.mockReset();
+    mockedFindByEmailWithMemberships.mockReset();
   });
 
-  it('retorna token e dados do usuário com credenciais válidas', async () => {
+  it('rejeita usuário inexistente', async () => {
+    mockedFindByEmailWithMemberships.mockResolvedValue(null);
+    await expect(login('naoexiste@empresa.com', 'qualquer')).rejects.toBeInstanceOf(InvalidCredentialsError);
+  });
+
+  it('rejeita usuário inativo', async () => {
     const senhaHash = await bcrypt.hash('Segredo@123', 4);
-    mockedFindByEmail.mockResolvedValue(fakeUser({ senhaHash }) as never);
-
-    const result = await login('admin@empresa.com', 'Segredo@123');
-
-    expect(result.token).toEqual(expect.any(String));
-    expect(result.user).toEqual({ id: 1, nome: 'Administrador', email: 'admin@empresa.com', role: 'admin' });
+    mockedFindByEmailWithMemberships.mockResolvedValue(fakeUser({ ativo: false }, senhaHash) as never);
+    await expect(login('usuario@empresa.com', 'Segredo@123')).rejects.toBeInstanceOf(InvalidCredentialsError);
   });
 
   it('rejeita senha incorreta', async () => {
     const senhaHash = await bcrypt.hash('Segredo@123', 4);
-    mockedFindByEmail.mockResolvedValue(fakeUser({ senhaHash }) as never);
-
-    await expect(login('admin@empresa.com', 'senha-errada')).rejects.toBeInstanceOf(InvalidCredentialsError);
+    mockedFindByEmailWithMemberships.mockResolvedValue(fakeUser({}, senhaHash) as never);
+    await expect(login('usuario@empresa.com', 'senha-errada')).rejects.toBeInstanceOf(InvalidCredentialsError);
   });
 
-  it('rejeita usuário inexistente', async () => {
-    mockedFindByEmail.mockResolvedValue(null);
-
-    await expect(login('naoexiste@empresa.com', 'qualquer')).rejects.toBeInstanceOf(InvalidCredentialsError);
-  });
-
-  it('rejeita usuário inativo mesmo com senha correta', async () => {
+  it('Administrador Global entra sem tenant ativo (console)', async () => {
     const senhaHash = await bcrypt.hash('Segredo@123', 4);
-    mockedFindByEmail.mockResolvedValue(fakeUser({ senhaHash, ativo: false }) as never);
+    mockedFindByEmailWithMemberships.mockResolvedValue(fakeUser({ isGlobalAdmin: true }, senhaHash) as never);
 
-    await expect(login('admin@empresa.com', 'Segredo@123')).rejects.toBeInstanceOf(InvalidCredentialsError);
+    const result = await login('usuario@empresa.com', 'Segredo@123');
+
+    expect(result.token).toEqual(expect.any(String));
+    expect(result.activeTenant).toBeNull();
+    expect(result.user.isGlobalAdmin).toBe(true);
+  });
+
+  it('usuário sem nenhum vínculo é rejeitado', async () => {
+    const senhaHash = await bcrypt.hash('Segredo@123', 4);
+    mockedFindByEmailWithMemberships.mockResolvedValue(fakeUser({ memberships: [] }, senhaHash) as never);
+    await expect(login('usuario@empresa.com', 'Segredo@123')).rejects.toBeInstanceOf(NoTenantAccessError);
+  });
+
+  it('usuário com um único vínculo entra direto nesse tenant', async () => {
+    const senhaHash = await bcrypt.hash('Segredo@123', 4);
+    mockedFindByEmailWithMemberships.mockResolvedValue(
+      fakeUser({ memberships: [membership(1, 'gestor')] }, senhaHash) as never
+    );
+
+    const result = await login('usuario@empresa.com', 'Segredo@123');
+
+    expect(result.activeTenant).toEqual({ id: 1, nome: 'Tenant 1', slug: 'tenant-1' });
+  });
+
+  it('usuário com múltiplos vínculos sem escolher tenant recebe a lista para seleção', async () => {
+    const senhaHash = await bcrypt.hash('Segredo@123', 4);
+    mockedFindByEmailWithMemberships.mockResolvedValue(
+      fakeUser({ memberships: [membership(1, 'gestor'), membership(2, 'admin')] }, senhaHash) as never
+    );
+
+    await expect(login('usuario@empresa.com', 'Segredo@123')).rejects.toBeInstanceOf(TenantSelectionRequiredError);
+  });
+
+  it('usuário com múltiplos vínculos escolhendo um tenant válido recebe token para ele', async () => {
+    const senhaHash = await bcrypt.hash('Segredo@123', 4);
+    mockedFindByEmailWithMemberships.mockResolvedValue(
+      fakeUser({ memberships: [membership(1, 'gestor'), membership(2, 'admin')] }, senhaHash) as never
+    );
+
+    const result = await login('usuario@empresa.com', 'Segredo@123', 2);
+
+    expect(result.activeTenant).toEqual({ id: 2, nome: 'Tenant 2', slug: 'tenant-2' });
+  });
+
+  it('rejeita tenant escolhido que não pertence ao usuário', async () => {
+    const senhaHash = await bcrypt.hash('Segredo@123', 4);
+    mockedFindByEmailWithMemberships.mockResolvedValue(
+      fakeUser({ memberships: [membership(1, 'gestor'), membership(2, 'admin')] }, senhaHash) as never
+    );
+
+    await expect(login('usuario@empresa.com', 'Segredo@123', 999)).rejects.toBeInstanceOf(InvalidCredentialsError);
   });
 });

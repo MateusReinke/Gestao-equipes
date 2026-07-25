@@ -10,11 +10,17 @@ import { collaboratorController } from '../controllers/collaborator.controller';
 import { managerController } from '../controllers/manager.controller';
 import { scaleController } from '../controllers/scale.controller';
 import { vacationController } from '../controllers/vacation.controller';
+import { tenantController } from '../controllers/tenant.controller';
 
 export const router = Router();
 
 router.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 router.post('/auth/login', asyncHandler(authController.login));
+router.post('/auth/switch-tenant', auth({ requireGlobalAdmin: true, requireTenant: false }), asyncHandler(authController.switchTenant));
+
+// Console da plataforma - exclusivo do Administrador Global, sem tenant ativo.
+router.get('/platform/tenants', auth({ requireGlobalAdmin: true, requireTenant: false }), asyncHandler(tenantController.list));
+router.post('/platform/tenants', auth({ requireGlobalAdmin: true, requireTenant: false }), asyncHandler(tenantController.create));
 
 router.get('/api/dashboard', auth(), asyncHandler(dashboardController.show));
 router.get('/plantao/atual', auth(), asyncHandler(oncallController.current));
@@ -25,7 +31,7 @@ router.get('/api/clientes', auth(), asyncHandler(clientController.list));
 router.get('/api/equipes', auth(), asyncHandler(teamController.list));
 router.get('/api/colaboradores', auth(), asyncHandler(collaboratorController.list));
 router.post('/api/colaboradores', auth(), asyncHandler(collaboratorController.create));
-router.get('/api/gestores', auth(['admin']), asyncHandler(managerController.list));
+router.get('/api/gestores', auth({ roles: ['admin'] }), asyncHandler(managerController.list));
 router.get('/api/escalas', auth(), asyncHandler(scaleController.list));
 router.get('/api/plantoes', auth(), asyncHandler(oncallController.list));
 router.get('/api/ferias', auth(), asyncHandler(vacationController.list));

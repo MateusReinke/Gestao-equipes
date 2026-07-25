@@ -2,22 +2,22 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 
 export const collaboratorRepository = {
-  findByEmail(email: string) {
-    return prisma.collaborator.findUnique({ where: { email } });
+  findByEmail(tenantId: number, email: string) {
+    return prisma.collaborator.findFirst({ where: { tenantId, email } });
   },
-  findByTeamIds(teamIds: number[]) {
+  findByTeamIds(tenantId: number, teamIds: number[]) {
     return prisma.collaborator.findMany({
-      where: { equipeId: { in: teamIds } },
+      where: { tenantId, equipeId: { in: teamIds } },
       include: { equipe: true, ferias: true },
     });
   },
-  findActiveByTeamIds(teamIds: number[]) {
+  findActiveByTeamIds(tenantId: number, teamIds: number[]) {
     return prisma.collaborator.findMany({
-      where: { equipeId: { in: teamIds }, ativo: true },
+      where: { tenantId, equipeId: { in: teamIds }, ativo: true },
       include: { equipe: true },
     });
   },
-  create(data: Prisma.CollaboratorUncheckedCreateInput) {
-    return prisma.collaborator.create({ data, include: { equipe: true } });
+  create(tenantId: number, data: Omit<Prisma.CollaboratorUncheckedCreateInput, 'tenantId'>) {
+    return prisma.collaborator.create({ data: { ...data, tenantId }, include: { equipe: true } });
   },
 };
