@@ -21,6 +21,8 @@ router.post('/auth/switch-tenant', auth({ requireGlobalAdmin: true, requireTenan
 // Console da plataforma - exclusivo do Administrador Global, sem tenant ativo.
 router.get('/platform/tenants', auth({ requireGlobalAdmin: true, requireTenant: false }), asyncHandler(tenantController.list));
 router.post('/platform/tenants', auth({ requireGlobalAdmin: true, requireTenant: false }), asyncHandler(tenantController.create));
+router.patch('/platform/tenants/:id', auth({ requireGlobalAdmin: true, requireTenant: false }), asyncHandler(tenantController.update));
+router.delete('/platform/tenants/:id', auth({ requireGlobalAdmin: true, requireTenant: false }), asyncHandler(tenantController.remove));
 
 router.get('/api/dashboard', auth(), asyncHandler(dashboardController.show));
 router.get('/plantao/atual', auth(), asyncHandler(oncallController.current));

@@ -13,4 +13,10 @@ export const tenantRepository = {
   create(data: { nome: string; slug: string }) {
     return prisma.tenant.create({ data });
   },
+  update(id: number, data: { nome?: string; slug?: string; ativo?: boolean }) {
+    return prisma.tenant.update({ where: { id }, data });
+  },
+  remove(id: number) {
+    return prisma.tenant.delete({ where: { id } });
+  },
 };

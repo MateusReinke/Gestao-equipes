@@ -26,12 +26,18 @@ export async function fetchApi<T>(path: string): Promise<T> {
 
 export async function postApi<T>(path: string, body: unknown): Promise<{ ok: true; data: T } | { ok: false; error: string; issues?: Record<string, string[] | undefined> }> {
   const token = await requireToken();
-  const response = await fetch(`${API_URL}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify(body),
-    cache: 'no-store',
-  });
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+    });
+  } catch {
+    return { ok: false, error: 'Não foi possível falar com o servidor. Tente novamente em instantes.' };
+  }
 
   const payload = await response.json().catch(() => ({}));
 
