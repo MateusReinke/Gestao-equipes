@@ -9,6 +9,7 @@ COPY backend/package*.json ./backend/
 COPY prisma ./prisma
 WORKDIR /app/backend
 RUN npm ci --include=dev
+RUN npx prisma generate --schema ../prisma/schema.prisma
 
 COPY backend ./
 RUN npm run build
@@ -23,6 +24,7 @@ COPY backend/package*.json ./backend/
 COPY prisma ./prisma
 WORKDIR /app/backend
 RUN npm ci --include=dev
+RUN npx prisma generate --schema ../prisma/schema.prisma
 
 COPY --from=build /app/backend/dist ./dist
 COPY --from=build /app/backend/entrypoint.sh ./entrypoint.sh
