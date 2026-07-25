@@ -1,7 +1,16 @@
 import { fetchApi } from '@/lib/api';
 import { ClientForm } from './client-form';
+import { ClientResponsible } from './client-responsible';
 
-type Client = { id: number; nome: string; idWhatsapp: string; escalation: string; ativo: boolean; responsavelInterno: { nome: string; email: string; telefone: string; equipe: { nome: string } }; equipes: Array<{ id: number; nome: string }> };
+type Client = {
+  id: number;
+  nome: string;
+  idWhatsapp: string;
+  escalation: string;
+  ativo: boolean;
+  responsavelInterno?: { id: number; nome: string; email: string; telefone: string; equipe: { nome: string } } | null;
+  equipes: Array<{ id: number; nome: string }>;
+};
 type Collaborator = { id: number; nome: string };
 
 export default async function Page() {
@@ -24,9 +33,23 @@ export default async function Page() {
             <dl className="mt-4 grid gap-3 text-sm text-slate-300">
               <div><dt className="text-slate-500">WhatsApp ID</dt><dd>{client.idWhatsapp}</dd></div>
               <div><dt className="text-slate-500">Escalation</dt><dd>{client.escalation}</dd></div>
-              <div><dt className="text-slate-500">Responsável interno</dt><dd>{client.responsavelInterno.nome} · {client.responsavelInterno.equipe.nome}</dd></div>
-              <div><dt className="text-slate-500">Contato</dt><dd>{client.responsavelInterno.email} · {client.responsavelInterno.telefone}</dd></div>
-              <div><dt className="text-slate-500">Equipes vinculadas</dt><dd>{client.equipes.map((team) => team.nome).join(', ')}</dd></div>
+              <div>
+                <dt className="text-slate-500">Responsável interno</dt>
+                <dd>
+                  {client.responsavelInterno
+                    ? `${client.responsavelInterno.nome} · ${client.responsavelInterno.equipe.nome}`
+                    : 'Sem responsável definido'}
+                </dd>
+                <ClientResponsible
+                  clientId={client.id}
+                  currentResponsibleId={client.responsavelInterno?.id ?? null}
+                  collaborators={collaborators}
+                />
+              </div>
+              {client.responsavelInterno && (
+                <div><dt className="text-slate-500">Contato</dt><dd>{client.responsavelInterno.email} · {client.responsavelInterno.telefone}</dd></div>
+              )}
+              <div><dt className="text-slate-500">Equipes vinculadas</dt><dd>{client.equipes.map((team) => team.nome).join(', ') || 'Nenhuma'}</dd></div>
             </dl>
           </section>
         ))}

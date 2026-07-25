@@ -20,11 +20,12 @@ export function ClientForm({ collaborators }: { collaborators: Collaborator[] })
     setSuccess(false);
 
     const formData = new FormData(event.currentTarget);
+    const responsavelRaw = String(formData.get('responsavelInternoId') || '');
     const payload = {
       nome: String(formData.get('nome') || ''),
       idWhatsapp: String(formData.get('idWhatsapp') || ''),
       escalation: String(formData.get('escalation') || ''),
-      responsavelInternoId: Number(formData.get('responsavelInternoId')),
+      responsavelInternoId: responsavelRaw ? Number(responsavelRaw) : null,
       ativo: true,
     };
 
@@ -53,14 +54,6 @@ export function ClientForm({ collaborators }: { collaborators: Collaborator[] })
     }
   }
 
-  if (collaborators.length === 0) {
-    return (
-      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-        Cadastre pelo menos um colaborador antes de criar um cliente — ele precisa de um responsável interno.
-      </div>
-    );
-  }
-
   return (
     <form onSubmit={handleSubmit} className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 md:grid-cols-2">
       <h2 className="col-span-full text-base font-semibold text-white">Adicionar cliente</h2>
@@ -81,9 +74,9 @@ export function ClientForm({ collaborators }: { collaborators: Collaborator[] })
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-slate-400" htmlFor="responsavelInternoId">Responsável interno</label>
-        <select id="responsavelInternoId" name="responsavelInternoId" required defaultValue="" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white">
-          <option value="" disabled>Selecione...</option>
+        <label className="text-xs text-slate-400" htmlFor="responsavelInternoId">Responsável interno (opcional)</label>
+        <select id="responsavelInternoId" name="responsavelInternoId" defaultValue="" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white">
+          <option value="">Definir depois</option>
           {collaborators.map((collaborator) => (
             <option key={collaborator.id} value={collaborator.id}>{collaborator.nome}</option>
           ))}

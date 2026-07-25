@@ -6,7 +6,7 @@ type DashboardData = {
   currentOnCall: Array<{ id: number; horaInicio: string; horaFim: string; tipo: string; cliente?: { nome: string } | null; colaborador: { nome: string; equipe: { nome: string } } }>;
   upcomingOnCall: Array<{ id: number; data: string; horaInicio: string; horaFim: string; cliente?: { nome: string } | null; colaborador: { nome: string; equipe: { nome: string } } }>;
   vacations: Array<{ id: number; dataInicio: string; dataFim: string; colaborador: { nome: string } }>;
-  clients: Array<{ id: number; nome: string; escalation: string; responsavelInterno: { nome: string } }>;
+  clients: Array<{ id: number; nome: string; escalation: string; responsavelInterno?: { nome: string } | null }>;
 };
 
 const metricLabels = [
@@ -76,7 +76,7 @@ export default async function HomePage() {
               <div key={client.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
                 <p className="font-medium text-white">{client.nome}</p>
                 <p className="text-slate-400">Escalation: {client.escalation}</p>
-                <p className="text-amber-300">Responsável interno: {client.responsavelInterno.nome}</p>
+                <p className="text-amber-300">Responsável interno: {client.responsavelInterno?.nome ?? 'Sem responsável definido'}</p>
               </div>
             ))}
           </div>

@@ -109,12 +109,12 @@ model Client {
   nome                  String
   idWhatsapp            String         @map("id_whatsapp")
   escalation            String
-  responsavelInternoId  Int            @map("responsavel_interno_id")
+  responsavelInternoId  Int?           @map("responsavel_interno_id")
   ativo                 Boolean        @default(true)
   createdAt             DateTime       @default(now()) @map("created_at")
   updatedAt             DateTime       @updatedAt @map("updated_at")
   tenant                Tenant         @relation(fields: [tenantId], references: [id])
-  responsavelInterno    Collaborator   @relation("ClientResponsible", fields: [responsavelInternoId], references: [id])
+  responsavelInterno    Collaborator?  @relation("ClientResponsible", fields: [responsavelInternoId], references: [id])
   equipes               Team[]
   escalas               Scale[]
   plantoes              OnCall[]

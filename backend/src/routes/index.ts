@@ -31,6 +31,7 @@ router.get('/clientes/:id/plantonista', auth(), asyncHandler(clientController.on
 
 router.get('/api/clientes', auth(), asyncHandler(clientController.list));
 router.post('/api/clientes', auth({ roles: ['admin'] }), asyncHandler(clientController.create));
+router.patch('/api/clientes/:id', auth({ roles: ['admin'] }), asyncHandler(clientController.update));
 router.get('/api/equipes', auth(), asyncHandler(teamController.list));
 router.post('/api/equipes', auth({ roles: ['admin'] }), asyncHandler(teamController.create));
 router.get('/api/colaboradores', auth(), asyncHandler(collaboratorController.list));

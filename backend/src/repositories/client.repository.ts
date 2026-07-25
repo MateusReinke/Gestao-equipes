@@ -26,4 +26,13 @@ export const clientRepository = {
       include: { responsavelInterno: { include: { equipe: true } }, equipes: true },
     });
   },
+  async update(tenantId: number, id: number, data: Partial<Omit<Prisma.ClientUncheckedUpdateInput, 'tenantId'>>) {
+    // updateMany (não update) para manter o filtro por tenantId na própria query,
+    // em vez de confiar só na checagem feita antes na service.
+    await prisma.client.updateMany({ where: { id, tenantId }, data });
+    return prisma.client.findFirst({
+      where: { id, tenantId },
+      include: { responsavelInterno: { include: { equipe: true } }, equipes: true },
+    });
+  },
 };
