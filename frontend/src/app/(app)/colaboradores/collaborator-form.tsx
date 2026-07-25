@@ -51,7 +51,11 @@ export function CollaboratorForm({ teams }: { teams: Team[] }) {
       event.currentTarget.reset();
       router.refresh();
     } catch {
-      setError('Falha de comunicação com o servidor');
+      // A requisição pode ter chegado ao servidor mesmo com erro no cliente
+      // (ex.: latência na primeira escrita após um deploy). Atualiza a lista
+      // por garantia, em vez de deixar a tela parecendo que nada aconteceu.
+      setError('Não foi possível confirmar a resposta do servidor — a lista foi atualizada, confira se o colaborador já aparece na tabela.');
+      router.refresh();
     } finally {
       setPending(false);
     }
