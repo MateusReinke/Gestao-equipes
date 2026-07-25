@@ -1,11 +1,20 @@
 import { fetchApi } from '@/lib/api';
+import { ClientForm } from './client-form';
 
 type Client = { id: number; nome: string; idWhatsapp: string; escalation: string; ativo: boolean; responsavelInterno: { nome: string; email: string; telefone: string; equipe: { nome: string } }; equipes: Array<{ id: number; nome: string }> };
+type Collaborator = { id: number; nome: string };
 
 export default async function Page() {
-  const clients = await fetchApi<Client[]>('/api/clientes');
+  const [clients, collaborators] = await Promise.all([
+    fetchApi<Client[]>('/api/clientes'),
+    fetchApi<Collaborator[]>('/api/colaboradores'),
+  ]);
+
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="flex flex-col gap-6">
+      <ClientForm collaborators={collaborators} />
+
+      <div className="grid gap-4 lg:grid-cols-2">
         {clients.map((client) => (
           <section key={client.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <div className="flex items-center justify-between gap-3">
@@ -21,6 +30,7 @@ export default async function Page() {
             </dl>
           </section>
         ))}
+      </div>
     </div>
   );
 }

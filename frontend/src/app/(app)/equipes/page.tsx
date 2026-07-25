@@ -1,11 +1,20 @@
 import { fetchApi } from '@/lib/api';
+import { TeamForm } from './team-form';
 
 type Team = { id: number; nome: string; ativo: boolean; cliente?: { nome: string } | null; colaboradores: Array<{ id: number; nome: string }>; gestores: Array<{ gestor: { nome: string; email: string } }> };
+type Client = { id: number; nome: string };
 
 export default async function EquipesPage() {
-  const teams = await fetchApi<Team[]>('/api/equipes');
+  const [teams, clients] = await Promise.all([
+    fetchApi<Team[]>('/api/equipes'),
+    fetchApi<Client[]>('/api/clientes'),
+  ]);
+
   return (
-    <div className="grid gap-4 xl:grid-cols-3">
+    <div className="flex flex-col gap-6">
+      <TeamForm clients={clients} />
+
+      <div className="grid gap-4 xl:grid-cols-3">
         {teams.map((team) => (
           <section key={team.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <h2 className="text-xl font-semibold">{team.nome}</h2>
@@ -18,6 +27,7 @@ export default async function EquipesPage() {
             </div>
           </section>
         ))}
+      </div>
     </div>
   );
 }

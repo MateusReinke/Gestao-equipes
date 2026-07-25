@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 
 export const clientRepository = {
@@ -17,6 +18,12 @@ export const clientRepository = {
     return prisma.client.findMany({
       where: { tenantId, equipes: { some: { id: { in: teamIds } } } },
       include: { responsavelInterno: true },
+    });
+  },
+  create(tenantId: number, data: Omit<Prisma.ClientUncheckedCreateInput, 'tenantId'>) {
+    return prisma.client.create({
+      data: { ...data, tenantId },
+      include: { responsavelInterno: { include: { equipe: true } }, equipes: true },
     });
   },
 };

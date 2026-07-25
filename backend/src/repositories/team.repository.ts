@@ -22,4 +22,7 @@ export const teamRepository = {
   findById(tenantId: number, id: number) {
     return prisma.team.findFirst({ where: { tenantId, id } });
   },
+  create(tenantId: number, data: { nome: string; clienteId?: number | null; ativo?: boolean }) {
+    return prisma.team.create({ data: { ...data, tenantId }, include: { cliente: true } });
+  },
 };

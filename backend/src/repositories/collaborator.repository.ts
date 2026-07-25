@@ -5,6 +5,9 @@ export const collaboratorRepository = {
   findByEmail(tenantId: number, email: string) {
     return prisma.collaborator.findFirst({ where: { tenantId, email } });
   },
+  findById(tenantId: number, id: number) {
+    return prisma.collaborator.findFirst({ where: { tenantId, id } });
+  },
   findByTeamIds(tenantId: number, teamIds: number[]) {
     return prisma.collaborator.findMany({
       where: { tenantId, equipeId: { in: teamIds } },
