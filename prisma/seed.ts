@@ -3,17 +3,24 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL || 'admin@gestao.local';
+const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || 'Admin@123';
+const MANAGER_EMAIL = process.env.SEED_MANAGER_EMAIL || 'gestor@gestao.local';
+const MANAGER_PASSWORD = process.env.SEED_MANAGER_PASSWORD || 'Gestor@123';
+
+/**
+ * Seed idempotente: só popula a base se o admin padrão ainda não existir.
+ * Nunca apaga dados existentes — seguro para rodar em todo boot do backend.
+ * Para resetar o dataset de demonstração em desenvolvimento, use `npm run seed:dev:reset`.
+ */
 async function main() {
-  await prisma.managerTeam.deleteMany();
-  await prisma.onCall.deleteMany();
-  await prisma.vacation.deleteMany();
-  await prisma.scaleDetail.deleteMany();
-  await prisma.scaleAssignment.deleteMany();
-  await prisma.scale.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.client.deleteMany();
-  await prisma.collaborator.deleteMany();
-  await prisma.team.deleteMany();
+  const existingAdmin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } });
+  if (existingAdmin) {
+    console.log('[seed] Base já inicializada — nenhuma alteração feita.');
+    return;
+  }
+
+  console.log('[seed] Base vazia — criando dados iniciais de demonstração.');
 
   const [noc, field, service] = await Promise.all([
     prisma.team.create({ data: { nome: 'NOC 24x7', ativo: true } }),
@@ -100,11 +107,11 @@ async function main() {
     { colaboradorId: erika.id, dataInicio: new Date('2026-03-18'), dataFim: new Date('2026-03-25'), status: 'aprovado' },
   ]});
 
-  const adminHash = await bcrypt.hash('Admin@123', 10);
-  const gestorHash = await bcrypt.hash('Gestor@123', 10);
+  const adminHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+  const gestorHash = await bcrypt.hash(MANAGER_PASSWORD, 10);
 
-  const admin = await prisma.user.create({ data: { nome: 'Administrador', email: 'admin@gestao.local', senhaHash: adminHash, role: 'admin', ativo: true } });
-  const gestor = await prisma.user.create({ data: { nome: 'Marina Gestora', email: 'gestor@gestao.local', senhaHash: gestorHash, role: 'gestor', ativo: true, colaboradorId: ana.id } });
+  const admin = await prisma.user.create({ data: { nome: 'Administrador', email: ADMIN_EMAIL, senhaHash: adminHash, role: 'admin', ativo: true } });
+  const gestor = await prisma.user.create({ data: { nome: 'Marina Gestora', email: MANAGER_EMAIL, senhaHash: gestorHash, role: 'gestor', ativo: true, colaboradorId: ana.id } });
 
   await prisma.managerTeam.createMany({ data: [
     { gestorId: admin.id, equipeId: noc.id },
@@ -113,6 +120,13 @@ async function main() {
     { gestorId: gestor.id, equipeId: noc.id },
     { gestorId: gestor.id, equipeId: service.id },
   ]});
+
+  console.log('[seed] Concluído.');
 }
 
-main().finally(() => prisma.$disconnect());
+main()
+  .catch((error) => {
+    console.error('[seed] Falhou:', error);
+    process.exitCode = 1;
+  })
+  .finally(() => prisma.$disconnect());

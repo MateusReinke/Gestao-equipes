@@ -1,57 +1,51 @@
-import { prisma } from '../config/prisma';
-import { registerAudit } from './audit.service';
+import { JwtPayload } from '../types/auth';
+import { oncallRepository } from '../repositories/oncall.repository';
+import { vacationRepository } from '../repositories/vacation.repository';
+import { getVisibleTeamIds } from './scope.service';
 
-class OnCallService {
-  getToday() {
-    const now = new Date();
-    return prisma.onCall.findMany({
-      where: { dataInicio: { lte: now }, dataFim: { gte: now } },
-      include: { colaborador: true, cliente: true },
-      orderBy: { dataInicio: 'asc' },
-    });
-  }
-
-  async getNowSummary() {
-    const active = await this.getToday();
-    const first = active[0];
-    const now = new Date();
-    return {
-      data: now.toISOString().slice(0, 10),
-      hora: now.toTimeString().slice(0, 5),
-      turno: first?.descricao || 'Plantão',
-      responsavel: first?.colaborador?.nome || null,
-      telefone: first?.colaborador?.telefone || null,
-    };
-  }
-
-  async create(input: {
-    dataInicio: string;
-    dataFim: string;
-    colaboradorId: number;
-    clienteId?: number;
-    descricao?: string;
-    usuario?: string;
-  }) {
-    const onCall = await prisma.onCall.create({
-      data: {
-        dataInicio: new Date(input.dataInicio),
-        dataFim: new Date(input.dataFim),
-        colaboradorId: input.colaboradorId,
-        clienteId: input.clienteId,
-        descricao: input.descricao,
-      },
-      include: { colaborador: true, cliente: true },
-    });
-
-    await registerAudit({
-      usuario: input.usuario || 'sistema',
-      acao: 'create',
-      tabela: 'plantao_periodos',
-      registroId: String(onCall.id),
-      dadosNovos: onCall,
-    });
-    return onCall;
-  }
+export function dayBounds(date = new Date()) {
+  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { start, end };
 }
 
-export const onCallService = new OnCallService();
+export function toMinutes(time: string) {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+export function isTimeBetween(nowMinutes: number, start: string, end: string) {
+  const startMinutes = toMinutes(start);
+  const endMinutes = toMinutes(end);
+  if (endMinutes >= startMinutes) return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+  return nowMinutes >= startMinutes || nowMinutes < endMinutes;
+}
+
+export async function getCurrentOnCall(clientId: number | undefined, user?: JwtPayload) {
+  const { start, end } = dayBounds();
+  const visibleTeamIds = await getVisibleTeamIds(user);
+  const nowMinutes = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();
+
+  const vacations = await vacationRepository.findApprovedInRange(start, end);
+  const onCalls = await oncallRepository.findForDay({
+    start,
+    end,
+    clientId,
+    teamIds: visibleTeamIds,
+    excludeCollaboratorIds: vacations.map((item) => item.colaboradorId),
+  });
+
+  return onCalls.filter((item) => isTimeBetween(nowMinutes, item.horaInicio, item.horaFim));
+}
+
+export async function getUpcomingOnCall(clientId: number | undefined, user?: JwtPayload) {
+  const visibleTeamIds = await getVisibleTeamIds(user);
+  const { start } = dayBounds();
+  return oncallRepository.findUpcoming({ start, clientId, teamIds: visibleTeamIds, take: 10 });
+}
+
+export async function listOnCallsForUser(user?: JwtPayload) {
+  const teamIds = await getVisibleTeamIds(user);
+  return oncallRepository.findByTeamIds(teamIds);
+}

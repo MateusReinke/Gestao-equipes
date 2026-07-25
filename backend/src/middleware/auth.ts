@@ -13,7 +13,7 @@ export function auth(requiredRoles: JwtPayload['role'][] = ['admin', 'gestor']) 
       if (!requiredRoles.includes(decoded.role)) {
         return res.status(403).json({ error: 'Sem permissão' });
       }
-      (req as Request & { user?: JwtPayload }).user = decoded;
+      req.user = decoded;
       return next();
     } catch {
       return res.status(401).json({ error: 'Token inválido' });

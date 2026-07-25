@@ -1,29 +1,17 @@
+import { getSessionToken } from './session';
+
 const API_URL = process.env.API_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || 'http://backend:4000';
-const DEFAULT_EMAIL = process.env.SEED_ADMIN_EMAIL || 'admin@gestao.local';
-const DEFAULT_PASSWORD = process.env.SEED_ADMIN_PASSWORD || 'Admin@123';
 
-let tokenCache: string | null = null;
+export class UnauthenticatedError extends Error {}
 
-async function getToken() {
-  if (tokenCache) return tokenCache;
-  const response = await fetch(`${API_URL}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: DEFAULT_EMAIL, senha: DEFAULT_PASSWORD }),
-    cache: 'no-store',
-  });
-
-  if (!response.ok) {
-    throw new Error('Falha ao autenticar no backend para renderizar o painel.');
-  }
-
-  const data = (await response.json()) as { token: string };
-  tokenCache = data.token;
-  return tokenCache;
+async function requireToken(): Promise<string> {
+  const token = await getSessionToken();
+  if (!token) throw new UnauthenticatedError('Sessão expirada ou ausente. Faça login novamente.');
+  return token;
 }
 
 export async function fetchApi<T>(path: string): Promise<T> {
-  const token = await getToken();
+  const token = await requireToken();
   const response = await fetch(`${API_URL}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
     next: { revalidate: 30 },
@@ -37,7 +25,7 @@ export async function fetchApi<T>(path: string): Promise<T> {
 }
 
 export async function postApi<T>(path: string, body: unknown): Promise<{ ok: true; data: T } | { ok: false; error: string; issues?: Record<string, string[] | undefined> }> {
-  const token = await getToken();
+  const token = await requireToken();
   const response = await fetch(`${API_URL}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

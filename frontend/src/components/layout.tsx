@@ -1,9 +1,10 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { usePathname } from 'next/navigation';
-import { ShieldCheck } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { LogOut, ShieldCheck } from 'lucide-react';
 import { Sidebar } from './sidebar';
+import type { SessionUser } from '@/lib/session-types';
 
 const titles: Record<string, string> = {
   '/': 'Dashboard executivo',
@@ -16,8 +17,20 @@ const titles: Record<string, string> = {
   '/ferias': 'Férias e indisponibilidades',
 };
 
-export function DashboardLayout({ children }: { children: ReactNode }) {
+const roleLabels: Record<SessionUser['role'], string> = {
+  admin: 'Administrador',
+  gestor: 'Gestor',
+};
+
+export function DashboardLayout({ children, user }: { children: ReactNode; user: SessionUser }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/login');
+    router.refresh();
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 md:flex">
@@ -30,9 +43,20 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
               <h1 className="mt-2 text-3xl font-semibold text-white">{titles[pathname] ?? 'Painel operacional'}</h1>
               <p className="mt-2 max-w-3xl text-sm text-slate-400">Ambiente pronto para produção com PostgreSQL, Prisma, API REST e frontend corporativo integrado.</p>
             </div>
-            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-              <div className="flex items-center gap-2 font-medium"><ShieldCheck size={16} /> Deploy único via Docker Compose</div>
-              <p className="mt-1 text-emerald-100/80">Seed inicial com admin padrão e dados operacionais.</p>
+            <div className="flex flex-col items-end gap-3">
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                <div className="flex items-center gap-2 font-medium">
+                  <ShieldCheck size={16} /> {user.nome} · {roleLabels[user.role]}
+                </div>
+                <p className="mt-1 text-emerald-100/80">{user.email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-rose-500/40 hover:text-rose-200"
+              >
+                <LogOut size={14} /> Sair
+              </button>
             </div>
           </div>
         </header>

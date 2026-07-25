@@ -27,7 +27,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://gestao:gestao123@postgres:5432/gestao_operacional?schema=public}
       APP_PORT: ${APP_PORT:-4000}
       NODE_ENV: ${NODE_ENV:-production}
-      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env antes de subir o backend}
+      SEED_ON_BOOT: ${SEED_ON_BOOT:-false}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@gestao.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Admin@123}
     ports:
       - "${BACKEND_PORT:-54000}:4000"
     depends_on:
@@ -44,8 +47,6 @@ services:
     environment:
       API_INTERNAL_URL: ${API_INTERNAL_URL:-http://backend:4000}
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:54000}
-      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@gestao.local}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Admin@123}
       PORT: ${PORT:-4333}
     ports:
       - "${FRONTEND_PORT:-4333}:4333"
