@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionToken } from '@/lib/session';
+import { CSRF_ERRO, sameOrigin } from '@/lib/csrf';
 
 const API_URL = process.env.API_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || 'http://backend:4000';
 
@@ -26,6 +27,8 @@ function backendPath(segmentos: string[], search: string) {
 }
 
 async function proxy(request: NextRequest, segmentos: string[], method: string) {
+  if (method !== 'GET' && !sameOrigin(request)) return NextResponse.json(CSRF_ERRO, { status: 403 });
+
   const token = await getSessionToken();
   if (!token) return NextResponse.json({ error: 'Sessão ausente. Faça login novamente.' }, { status: 401 });
 
@@ -59,6 +62,18 @@ async function proxy(request: NextRequest, segmentos: string[], method: string) 
 
   // 204 não pode ter corpo — NextResponse.json com 204 lança erro.
   if (response.status === 204) return new NextResponse(null, { status: 204 });
+
+  // Nem toda rota devolve JSON: a exportação de relatório manda CSV como anexo.
+  // Nesses casos o corpo passa direto, junto com os cabeçalhos que dizem ao
+  // navegador que é para baixar.
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    const headers = new Headers();
+    headers.set('Content-Type', contentType || 'application/octet-stream');
+    const disposition = response.headers.get('content-disposition');
+    if (disposition) headers.set('Content-Disposition', disposition);
+    return new NextResponse(await response.arrayBuffer(), { status: response.status, headers });
+  }
 
   const payload = await response.json().catch(() => ({}));
   return NextResponse.json(payload, { status: response.status });

@@ -532,6 +532,9 @@ model Vacation {
   respondidoPor User?        @relation("VacationApprover", fields: [respondidoPorId], references: [id])
 
   @@index([tenantId])
+  /// `dataFim` fecha o índice porque é o predicado que descarta o histórico
+  /// já encerrado — a maior parte da tabela.
+  @@index([tenantId, status, dataFim])
   @@map("ferias")
 }
 
@@ -554,6 +557,7 @@ model Absence {
   respondidoPor User?        @relation("AbsenceApprover", fields: [respondidoPorId], references: [id])
 
   @@index([tenantId, dataInicio])
+  @@index([tenantId, status, dataFim])
   @@map("ausencias")
 }
 
@@ -577,6 +581,9 @@ model AuditLog {
 
   @@index([tenantId, createdAt])
   @@index([entidade, entidadeId])
+  /// Serve a paginação por cursor (ORDER BY id DESC) sem varrer as linhas
+  /// dos outros tenants — ver a migration 202607262300 para a medição.
+  @@index([tenantId, id(sort: Desc)])
   @@map("auditoria")
 }
 

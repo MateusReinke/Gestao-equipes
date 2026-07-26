@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
+  BarChart3,
   Building2,
   CalendarClock,
   CalendarDays,
@@ -45,6 +46,8 @@ const NAV: NavItem[] = [
   { href: '/colaboradores', label: 'Colaboradores', icon: UserSquare2, permissoes: [PERMISSIONS.COLLABORATOR_VIEW], grupo: 'Cadastros' },
 
   { href: '/rh', label: 'Férias e ausências', icon: ClipboardList, permissoes: [PERMISSIONS.HR_VACATION_VIEW, PERMISSIONS.HR_ABSENCE_VIEW], grupo: 'Pessoas' },
+
+  { href: '/relatorios', label: 'Relatórios', icon: BarChart3, permissoes: [PERMISSIONS.REPORT_VIEW], grupo: 'Administração' },
 
   { href: '/usuarios', label: 'Usuários e papéis', icon: ShieldCheck, permissoes: [PERMISSIONS.USER_VIEW, PERMISSIONS.ROLE_MANAGE], grupo: 'Administração' },
   { href: '/auditoria', label: 'Auditoria', icon: ScrollText, permissoes: [PERMISSIONS.AUDIT_VIEW], grupo: 'Administração' },

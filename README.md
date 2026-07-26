@@ -132,6 +132,42 @@ Compartilhar dá acesso ao **painel**, não aos dados: os widgets continuam resp
 
 O escopo *link público* gera uma URL sem sessão, somente leitura, com atualização automática a cada minuto — feita para a TV do NOC. O token é o segredo; revogar a concessão derruba o link na hora. Cada link é independente: revogar um não afeta os outros.
 
+## Relatórios
+
+Cinco relatórios operacionais, todos com filtro de período e de equipe, prévia na tela e exportação:
+
+| Relatório | O que traz |
+| --- | --- |
+| **Escala por colaborador** | Turno a turno de cada pessoa, com horas e quem estava escalado antes de uma troca. |
+| **Escala por equipe** | Cobertura consolidada por time e dia: turnos, pessoas distintas e horas. |
+| **Horas por colaborador** | Turnos, dias com turno, horas acumuladas e média por turno. |
+| **Trocas de turno** | Pedidos do período, com motivo, status, quem respondeu e quando. |
+| **Férias e ausências** | Indisponibilidades que cruzam o período, com dias contados e status. |
+
+O CSV sai pronto para o Excel em pt-BR: separador `;`, decimal com vírgula e BOM UTF-8 (sem ele, a acentuação abre quebrada). As datas vão em ISO no arquivo — ordena certo como texto e nenhuma planilha confunde dia com mês — e aparecem em dd/mm/aaaa na tela.
+
+O recorte é o mesmo do resto do sistema: você só exporta as equipes que já enxerga, e pedir uma equipe fora do seu escopo devolve vazio em vez de vazar. Toda exportação fica na auditoria, com quantas linhas saíram e de onde.
+
+## Segurança
+
+- **Cabeçalhos.** `helmet` no backend e cabeçalhos explícitos no Next: `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` e `Permissions-Policy`. Nenhum dos dois anuncia a tecnologia que roda por baixo.
+- **CORS fechado por padrão.** O navegador nunca fala com a API direto — o frontend usa Server Components e um proxy server-side. Nenhuma origem é liberada a menos que `CORS_ORIGINS` diga o contrário.
+- **Rate limit.** 10 tentativas de login por IP a cada 5 minutos (login bem-sucedido não gasta cota), 60/min no wallboard público — é o que impede adivinhar o token do link — e 300/min no restante da API.
+- **CSRF.** As rotas `/api/*` do Next são autenticadas por cookie httpOnly, e o navegador o anexa sozinho até numa requisição vinda de outro site. Além do `SameSite=lax`, toda mudança de estado confere a origem e responde 403 quando ela não bate.
+- **Sessão.** Token em cookie `httpOnly`, `secure` em produção, expirando em 12h. As permissões efetivas são buscadas do backend a cada requisição — nunca lidas do cookie, que o cliente poderia editar.
+- **Corpo limitado** a 256 KB, e `trust proxy` configurado para que rate limit e auditoria vejam o IP real atrás do Coolify.
+
+Ainda fora do escopo, e conscientemente: MFA/TOTP, SSO com Entra ID e Row-Level Security no Postgres (hoje o isolamento é garantido na aplicação, com testes que travam o contrato).
+
+## Desempenho
+
+A auditoria já pagina por cursor (`?take=&cursor=`), e os índices foram escolhidos medindo, não adivinhando — com `EXPLAIN ANALYZE` sobre uma base sintética de 500 mil registros de auditoria, 220 mil turnos e 30 mil de férias, distribuídos entre duas empresas de tamanhos bem diferentes:
+
+- **`auditoria(tenant_id, id DESC)`** — a paginação ordena por `id DESC`. Sem o índice o Postgres varre a chave primária de trás para frente e descarta as linhas das outras empresas: numa que responde por 1/40 dos registros, eram ~1.900 linhas lidas para devolver 50. Com ele, zero descarte.
+- **`ferias(tenant_id, status, data_fim)` e `ausencias(...)`** — a consulta de indisponibilidade roda a cada painel e a cada geração de turnos. A coluna que fecha o índice é `data_fim`, não `data_inicio`: é `data_fim >=` que descarta o histórico já encerrado, que é a maior parte da tabela. Com `data_inicio` o ganho era nulo — quase todo registro passado satisfaz `data_inicio <=`.
+
+A consulta de turnos por período já era servida por `turnos(tenant_id, data)`, e o join com colaboradores resolve por chave primária com memoização — não precisou de índice novo.
+
 ## Integrações públicas
 
 Cadastro de clientes preenche automaticamente a partir de APIs gratuitas, com o backend fazendo a chamada (evita CORS e padroniza a resposta):
@@ -154,6 +190,7 @@ Se a consulta falhar, o formulário continua utilizável — os campos são apen
 | **Equipes / Colaboradores** | Estrutura da operação e disponibilidade para plantão/sobreaviso. |
 | **Férias e ausências** | Solicitação e aprovação; períodos aprovados viram conflito na geração de turnos. |
 | **Usuários e papéis** | Gestão de acesso, atribuição de papéis e criação de papéis customizados. |
+| **Relatórios** | Cinco relatórios operacionais com filtro de período e equipe, prévia e exportação em CSV. |
 | **Auditoria** | Quem fez, o quê, quando, de onde — com estado antes/depois. |
 
 ## Auditoria
@@ -173,7 +210,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 cd backend && npm test
 ```
 
-102 testes cobrindo:
+124 testes cobrindo:
 
 - **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
 - **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
@@ -181,4 +218,7 @@ cd backend && npm test
 - **Gerador de turnos:** revezamento 12x36 com 2 e 3 pessoas, escala fixa 5x2, faixas sobrepostas, vigência de atribuições e alinhamento da rotação ao regerar períodos parciais.
 - **Compartilhamento:** resolução do acesso efetivo (posse, papel, equipe, tenant, plataforma), a mais permissiva vencendo independentemente da ordem, destinatário de outra empresa recusado, escopo de plataforma restrito ao Administrador Global, promoção em vez de duplicata e expiração de link público.
 - **Widgets:** filtro de equipe que não amplia o escopo do observador, cobertura por dia com dias vazios, carga com turno que vira a meia-noite, exclusão de quem está de férias e um widget que falha sem derrubar os vizinhos.
+- **Relatórios:** cálculo de horas com turno que vira a meia-noite, agregação por equipe/dia, filtro por dia do turno cedido nas trocas, contagem inclusiva de dias e o escopo que não amplia com equipe de fora.
+- **CSV:** BOM UTF-8, separador `;`, decimal com vírgula, aspas dobradas e campo com separador ou quebra de linha protegido.
+- **Segurança:** cabeçalhos aplicados e teto de requisições anunciado.
 - **Validação de CNPJ:** dígitos verificadores, máscara e sequências repetidas.

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { auth } from '../middleware/auth';
 import { requirePermission } from '../middleware/requirePermission';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { loginRateLimit, publicRateLimit } from '../middleware/rateLimit';
 import { PERMISSIONS as P } from '../types/permissions';
 import { authController } from '../controllers/auth.controller';
 import { dashboardController } from '../controllers/dashboard.controller';
@@ -17,14 +18,16 @@ import { auditController } from '../controllers/audit.controller';
 import { lookupController } from '../controllers/lookup.controller';
 import { tenantController } from '../controllers/tenant.controller';
 import { dashboardBuilderController } from '../controllers/dashboard-builder.controller';
+import { reportController } from '../controllers/report.controller';
 
 export const router = Router();
 
 // ---------- Público ----------
 router.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
-router.post('/auth/login', asyncHandler(authController.login));
+router.post('/auth/login', loginRateLimit, asyncHandler(authController.login));
 // Wallboard: o token do link é o próprio segredo, então não passa por sessão.
-router.get('/public/dashboards/:token', asyncHandler(dashboardBuilderController.publicView));
+// O rate limit aqui é o que impede tentar adivinhar o token por força bruta.
+router.get('/public/dashboards/:token', publicRateLimit, asyncHandler(dashboardBuilderController.publicView));
 
 // ---------- Sessão ----------
 router.post('/auth/switch-tenant', auth({ requireGlobalAdmin: true, requireTenant: false }), asyncHandler(authController.switchTenant));
@@ -119,6 +122,11 @@ router.delete('/api/papeis/:id', auth(), requirePermission(P.ROLE_MANAGE), async
 router.get('/api/usuarios', auth(), requirePermission(P.USER_VIEW), asyncHandler(rbacController.listUsers));
 router.post('/api/usuarios', auth(), requirePermission(P.USER_INVITE), asyncHandler(rbacController.inviteUser));
 router.patch('/api/usuarios/:userId', auth(), requirePermission(P.USER_MANAGE_ROLES, P.USER_EDIT), asyncHandler(rbacController.updateUser));
+
+// ---------- Relatórios ----------
+router.get('/api/relatorios', auth(), requirePermission(P.REPORT_VIEW), reportController.catalog);
+router.get('/api/relatorios/:id', auth(), requirePermission(P.REPORT_VIEW), asyncHandler(reportController.show));
+router.get('/api/relatorios/:id/csv', auth(), requirePermission(P.REPORT_EXPORT), asyncHandler(reportController.export));
 
 // ---------- Auditoria ----------
 router.get('/api/auditoria', auth(), requirePermission(P.AUDIT_VIEW), asyncHandler(auditController.list));

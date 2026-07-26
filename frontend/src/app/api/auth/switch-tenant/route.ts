@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionToken } from '@/lib/session';
+import { CSRF_ERRO, sameOrigin } from '@/lib/csrf';
 import { SESSION_COOKIE, SESSION_TENANT_COOKIE } from '@/lib/session-cookie';
 
 const API_URL = process.env.API_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || 'http://backend:4000';
@@ -13,6 +14,8 @@ const COOKIE_OPTIONS = {
 };
 
 export async function POST(request: NextRequest) {
+  if (!sameOrigin(request)) return NextResponse.json(CSRF_ERRO, { status: 403 });
+
   const token = await getSessionToken();
   if (!token) return NextResponse.json({ error: 'Sessão ausente.' }, { status: 401 });
 
