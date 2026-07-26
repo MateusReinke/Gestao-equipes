@@ -9,6 +9,7 @@ COPY backend/package*.json ./backend/
 COPY prisma ./prisma
 WORKDIR /app/backend
 RUN npm ci --include=dev
+RUN npx prisma generate --schema ../prisma/schema.prisma
 
 COPY backend ./
 RUN npm run build
@@ -23,6 +24,10 @@ COPY backend/package*.json ./backend/
 COPY prisma ./prisma
 WORKDIR /app/backend
 RUN npm ci --include=dev
+RUN npx prisma generate --schema ../prisma/schema.prisma
+
+# Defesa extra para resolução de módulos de /app/prisma/seed*.ts (ver NODE_PATH em entrypoint.sh)
+RUN ln -sf /app/backend/node_modules /app/node_modules
 
 COPY --from=build /app/backend/dist ./dist
 COPY --from=build /app/backend/entrypoint.sh ./entrypoint.sh

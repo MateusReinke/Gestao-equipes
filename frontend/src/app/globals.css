@@ -2,10 +2,137 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-slate-950 text-slate-100 antialiased;
+/**
+ * Sistema visual da plataforma.
+ * Direção: um painel de operação (NOC) que as pessoas encaram por 12 horas seguidas —
+ * fundo escuro e calmo, densidade de informação alta mas respirável, e status que
+ * precisa ser lido de relance (por isso as cores semânticas são separadas do acento).
+ */
+:root {
+  --bg: #090e1a;
+  --surface: #111827;
+  --surface-raised: #172033;
+  --surface-hover: #1d2740;
+  --border: #24304d;
+  --border-strong: #33415f;
+
+  --text: #e9edf8;
+  --text-muted: #97a3bf;
+  --text-subtle: #6b7794;
+
+  --accent: #7b8cff;
+  --accent-strong: #5f72f5;
+  --accent-soft: rgba(123, 140, 255, 0.14);
+
+  --ok: #34d399;
+  --ok-soft: rgba(52, 211, 153, 0.13);
+  --warn: #fbbf24;
+  --warn-soft: rgba(251, 191, 36, 0.13);
+  --danger: #fb7185;
+  --danger-soft: rgba(251, 113, 133, 0.13);
+  --info: #38bdf8;
+  --info-soft: rgba(56, 189, 248, 0.13);
 }
 
-.card {
-  @apply rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4 shadow-lg shadow-black/10;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    @apply antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04';
+  }
+
+  /* Números em colunas precisam alinhar — horários, contagens, datas. */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+    border: 2px solid var(--bg);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-subtle);
+  }
+}
+
+@layer components {
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    @apply rounded-xl;
+  }
+
+  .card-raised {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    @apply rounded-xl;
+  }
+
+  /* Rótulo curto em caixa alta usado em cabeçalhos de seção e eyebrows. */
+  .eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-[0.14em];
+    color: var(--text-subtle);
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-xs font-medium;
+    color: var(--text-muted);
+  }
+
+  .input-base {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    @apply w-full rounded-lg px-3 py-2 text-sm outline-none transition-colors;
+  }
+  .input-base::placeholder {
+    color: var(--text-subtle);
+  }
+  .input-base:hover:not(:disabled) {
+    border-color: var(--border-strong);
+  }
+  .input-base:focus {
+    border-color: var(--accent);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .input-base:disabled {
+    @apply cursor-not-allowed opacity-55;
+  }
+
+  /* Conteúdo largo (tabelas, calendário) rola dentro do próprio container,
+     para a página nunca rolar na horizontal. */
+  .scroll-x {
+    @apply overflow-x-auto;
+    scrollbar-width: thin;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
