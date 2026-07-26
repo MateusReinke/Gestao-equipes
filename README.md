@@ -77,6 +77,10 @@ Gerar turnos traduz a regra em dias concretos. O comportamento por tipo:
 
 A geração é **idempotente e ancorada**: regerar só um pedaço do meio do período mantém o alinhamento do revezamento já combinado. Turnos que caem em férias/ausências aprovadas são criados mesmo assim, mas reportados como conflito para o gestor decidir a cobertura.
 
+### Ajuste avulso de turno
+
+Quando a escala não prevê o caso — alguém não pode assumir e não há contrapartida nem tempo para o fluxo de troca — quem tem `shift.edit` remaneja o turno direto no calendário ou o cancela. A alteração fica na auditoria, e regerar a escala não a desfaz: o gerador preserva turnos com status diferente de `planejado`.
+
 ### Trocas de turno
 
 Quando duas pessoas combinam trocar um dia específico:
@@ -172,10 +176,18 @@ A consulta de turnos por período já era servida por `turnos(tenant_id, data)`,
 
 Cadastro de clientes preenche automaticamente a partir de APIs gratuitas, com o backend fazendo a chamada (evita CORS e padroniza a resposta):
 
-- **CNPJ** → [BrasilAPI](https://brasilapi.com.br) (dados da Receita Federal): razão social, telefone e endereço. Os dígitos verificadores são validados localmente antes de gastar a chamada.
+- **CNPJ** → [BrasilAPI](https://brasilapi.com.br) com fallback para [Minha Receita](https://minhareceita.org). As duas servem a mesma base aberta da Receita, e nenhuma delas tem disponibilidade boa o suficiente para ser a única fonte. Os dígitos verificadores são validados localmente antes de gastar a chamada.
 - **CEP** → BrasilAPI com fallback para [ViaCEP](https://viacep.com.br): logradouro, bairro, cidade e UF.
 
-Se a consulta falhar, o formulário continua utilizável — os campos são apenas preenchidos manualmente.
+A resposta diz qual fonte respondeu, e isso aparece na tela e no log — sem essa informação, diagnosticar uma falha de consulta em produção vira adivinhação. Quando nenhuma fonte responde, a mensagem traz o motivo de cada uma (tempo esgotado, limite de consultas, HTTP tal) em vez de um "serviço indisponível" genérico.
+
+Três detalhes que a integração precisa acertar e que não são óbvios:
+
+- **User-Agent.** O `fetch` do Node não envia um por padrão, e a borda que serve a BrasilAPI trata requisição anônima como tráfego suspeito.
+- **Tipos inconsistentes.** `cep` e `numero` chegam ora como string, ora como número — exigir string descartava o valor em silêncio e deixava o campo vazio mesmo com a consulta bem-sucedida.
+- **Logradouro partido.** A Receita guarda o tipo separado do nome (`RUA` + `BELA VISTA`); usar só o segundo campo gravava o endereço sem o "RUA".
+
+Se todas as fontes falharem, o formulário continua utilizável — os campos são apenas preenchidos manualmente.
 
 ## Módulos
 
@@ -186,12 +198,20 @@ Se a consulta falhar, o formulário continua utilizável — os campos são apen
 | **Turnos** | Calendário semanal da operação, com status e rastreio de trocas. |
 | **Trocas** | Fluxo completo de solicitação → aceite → aprovação. |
 | **Escalas** | Regras de revezamento com faixas de horário e ordem da rotação. |
-| **Clientes** | Cadastro completo com CNPJ/CEP, SLA, escalation e responsável interno. |
-| **Equipes / Colaboradores** | Estrutura da operação e disponibilidade para plantão/sobreaviso. |
+| **Clientes** | Cadastro completo com CNPJ/CEP, SLA, escalation e responsável interno — criar, editar e remover. |
+| **Equipes / Colaboradores** | Estrutura da operação e disponibilidade para plantão/sobreaviso, com edição e remoção protegida por histórico. |
 | **Férias e ausências** | Solicitação e aprovação; períodos aprovados viram conflito na geração de turnos. |
 | **Usuários e papéis** | Gestão de acesso, atribuição de papéis e criação de papéis customizados. |
 | **Relatórios** | Cinco relatórios operacionais com filtro de período e equipe, prévia e exportação em CSV. |
 | **Auditoria** | Quem fez, o quê, quando, de onde — com estado antes/depois. |
+
+## Exclusão protegida por histórico
+
+Equipe e colaborador só são apagados de vez quando não deixam órfão. Quem já apareceu numa escala, tirou férias ou responde por um cliente tem registros que a auditoria e os relatórios referenciam — apagar reescreveria o passado.
+
+Nesses casos a API responde **409** com o que exatamente segura a exclusão (`5 turno(s), 2 atribuição(ões) de escala, 1 cliente(s) sob sua responsabilidade`) e aponta a saída: **desativar**. O cadastro inativo sai da geração de turnos e das listas de seleção, e o histórico continua íntegro.
+
+A mesma regra não vale para escala: removê-la é seguro porque os turnos já gerados sobrevivem — a chave estrangeira é `ON DELETE SET NULL`.
 
 ## Auditoria
 
@@ -210,7 +230,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 cd backend && npm test
 ```
 
-124 testes cobrindo:
+157 testes cobrindo:
 
 - **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
 - **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
@@ -221,4 +241,5 @@ cd backend && npm test
 - **Relatórios:** cálculo de horas com turno que vira a meia-noite, agregação por equipe/dia, filtro por dia do turno cedido nas trocas, contagem inclusiva de dias e o escopo que não amplia com equipe de fora.
 - **CSV:** BOM UTF-8, separador `;`, decimal com vírgula, aspas dobradas e campo com separador ou quebra de linha protegido.
 - **Segurança:** cabeçalhos aplicados e teto de requisições anunciado.
-- **Validação de CNPJ:** dígitos verificadores, máscara e sequências repetidas.
+- **Consulta de CNPJ/CEP:** dígitos verificadores, campos que chegam como número, logradouro partido em tipo + nome, telefone só com dígitos, fallback por tempo esgotado / limite de consultas / resposta vazia, 404 tratado como definitivo e o payload real de produção mapeado campo a campo.
+- **Exclusão protegida:** equipe e colaborador com histórico recusados com o motivo detalhado, e apagados quando realmente não deixam órfão.

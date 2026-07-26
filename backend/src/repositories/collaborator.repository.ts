@@ -43,4 +43,19 @@ export const collaboratorRepository = {
     await prisma.collaborator.updateMany({ where: { id, tenantId }, data });
     return prisma.collaborator.findFirst({ where: { id, tenantId }, include: { equipe: true } });
   },
+  /// O que impede apagar de vez: histórico operacional e vínculos que
+  /// perderiam sentido se a pessoa sumisse da base.
+  contarVinculos(tenantId: number, id: number) {
+    return prisma.$transaction([
+      prisma.shift.count({ where: { tenantId, colaboradorId: id } }),
+      prisma.scaleAssignment.count({ where: { tenantId, colaboradorId: id } }),
+      prisma.vacation.count({ where: { tenantId, colaboradorId: id } }),
+      prisma.absence.count({ where: { tenantId, colaboradorId: id } }),
+      prisma.client.count({ where: { tenantId, responsavelInternoId: id } }),
+      prisma.tenantMembership.count({ where: { tenantId, colaboradorId: id } }),
+    ]);
+  },
+  remove(tenantId: number, id: number) {
+    return prisma.collaborator.deleteMany({ where: { id, tenantId } });
+  },
 };

@@ -27,12 +27,14 @@ export default async function TurnosPage({ searchParams }: { searchParams: Promi
   const segunda = inicioDaSemana(Number.isNaN(base.getTime()) ? new Date() : base);
   const domingo = addDays(segunda, 6);
 
-  const [turnosResult, escalasResult] = await Promise.all([
+  const [turnosResult, escalasResult, colaboradoresResult] = await Promise.all([
     fetchApiSafe<Turno[]>(`/api/turnos?inicio=${toInputDate(segunda)}&fim=${toInputDate(domingo)}`, []),
     fetchApiSafe<Escala[]>('/api/escalas', []),
+    fetchApiSafe<Array<{ id: number; nome: string }>>('/api/colaboradores', []),
   ]);
 
   const podeGerar = can(session.permissoes, PERMISSIONS.SCHEDULE_GENERATE);
+  const podeEditarTurno = can(session.permissoes, PERMISSIONS.SHIFT_EDIT);
   const podePedirTroca = can(session.permissoes, PERMISSIONS.SHIFT_REQUEST_SWAP);
 
   const semanaAnterior = toInputDate(addDays(segunda, -7));
@@ -98,7 +100,7 @@ export default async function TurnosPage({ searchParams }: { searchParams: Promi
             }
           />
         ) : (
-          <ShiftWeekGrid dias={dias.map(toInputDate)} turnos={turnosResult.data} />
+          <ShiftWeekGrid podeEditar={podeEditarTurno} colaboradores={colaboradoresResult.data} dias={dias.map(toInputDate)} turnos={turnosResult.data} />
         )}
       </Card>
 

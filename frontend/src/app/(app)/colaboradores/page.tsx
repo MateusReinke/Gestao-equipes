@@ -1,11 +1,11 @@
 import { UserSquare2 } from 'lucide-react';
 import { DataStatus } from '@/components/data-status';
-import { Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Tr } from '@/components/ui';
+import { Card, CardHeader, EmptyState, PageHeader, Table, Th } from '@/components/ui';
 import { fetchApiSafe } from '@/lib/api';
 import { requirePermissionSession } from '@/lib/session';
 import { PERMISSIONS, can } from '@/lib/session-types';
-import { CONTRATO_LABELS, MODELO_LABELS, formatPhone } from '@/lib/format';
 import { CollaboratorForm } from './collaborator-form';
+import { CollaboratorRow } from './collaborator-row';
 
 type Collaborator = {
   id: number;
@@ -32,6 +32,10 @@ export default async function ColaboradoresPage() {
   ]);
 
   const podeCriar = can(session.permissoes, PERMISSIONS.COLLABORATOR_CREATE);
+  const podeEditar = can(session.permissoes, PERMISSIONS.COLLABORATOR_EDIT);
+  const podeRemover = can(session.permissoes, PERMISSIONS.COLLABORATOR_DELETE);
+  const temAcoes = podeEditar || podeRemover;
+  const colunas = temAcoes ? 7 : 6;
   const ativos = collaboratorsResult.data.filter((item) => item.ativo).length;
 
   return (
@@ -71,31 +75,19 @@ export default async function ColaboradoresPage() {
                 <Th>Contrato</Th>
                 <Th>Contato</Th>
                 <Th>Disponibilidade</Th>
+                {temAcoes ? <Th className="text-right">Ações</Th> : null}
               </tr>
             </thead>
             <tbody>
               {collaboratorsResult.data.map((item) => (
-                <Tr key={item.id} className={item.ativo ? '' : 'opacity-55'}>
-                  <Td>
-                    <p className="font-medium text-ink">{item.nome}</p>
-                    <p className="text-2xs text-ink-subtle">{item.email}</p>
-                  </Td>
-                  <Td>{item.cargo}</Td>
-                  <Td>{item.equipe.nome}</Td>
-                  <Td>
-                    <p>{CONTRATO_LABELS[item.tipoContrato] ?? item.tipoContrato}</p>
-                    <p className="text-2xs text-ink-subtle">{MODELO_LABELS[item.modeloTrabalho] ?? item.modeloTrabalho}</p>
-                  </Td>
-                  <Td className="tabular">{formatPhone(item.telefone)}</Td>
-                  <Td>
-                    <div className="flex flex-wrap gap-1">
-                      {item.fazPlantao ? <Badge tone="accent">Plantão</Badge> : null}
-                      {item.sobreAviso ? <Badge tone="warn">Sobreaviso</Badge> : null}
-                      {!item.fazPlantao && !item.sobreAviso ? <span className="text-2xs text-ink-subtle">—</span> : null}
-                      {!item.ativo ? <Badge tone="danger">Inativo</Badge> : null}
-                    </div>
-                  </Td>
-                </Tr>
+                <CollaboratorRow
+                  key={item.id}
+                  colaborador={item}
+                  teams={teamsResult.data}
+                  podeEditar={podeEditar}
+                  podeRemover={podeRemover}
+                  colunas={colunas}
+                />
               ))}
             </tbody>
           </Table>

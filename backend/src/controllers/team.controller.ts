@@ -8,6 +8,8 @@ import {
   NoActiveTenantError,
   ClientNotFoundForTeamError,
   TeamNotFoundError,
+  deleteTeam,
+  TeamHasHistoryError,
 } from '../services/team.service';
 import { auditFromRequest } from '../services/audit.service';
 
@@ -15,6 +17,9 @@ function handleError(error: unknown, res: Response) {
   if (error instanceof NoActiveTenantError) return res.status(409).json({ error: error.message });
   if (error instanceof TeamNotFoundError) return res.status(404).json({ error: error.message });
   if (error instanceof ClientNotFoundForTeamError) return res.status(400).json({ error: error.message });
+  // 409: o pedido faz sentido, mas o estado atual impede — a mensagem diz o
+  // que segura e qual é a saída (desativar).
+  if (error instanceof TeamHasHistoryError) return res.status(409).json({ error: error.message, detalhes: error.detalhes });
   throw error;
 }
 
@@ -60,6 +65,22 @@ export const teamController = {
         depois,
       });
       return res.json(depois);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async remove(req: Request, res: Response) {
+    try {
+      const team = await deleteTeam(Number(req.params.id), req.user);
+      await auditFromRequest(req, {
+        acao: 'delete',
+        entidade: 'equipe',
+        entidadeId: req.params.id,
+        descricao: `Removeu a equipe "${team.nome}"`,
+        antes: team,
+      });
+      return res.status(204).send();
     } catch (error) {
       return handleError(error, res);
     }

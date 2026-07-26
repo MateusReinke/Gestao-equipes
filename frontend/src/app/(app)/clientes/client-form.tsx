@@ -19,9 +19,39 @@ type CnpjLookup = {
   bairro: string | null;
   cidade: string | null;
   uf: string | null;
+  fonte: string;
 };
 
-type CepLookup = { cep: string; logradouro: string | null; bairro: string | null; cidade: string | null; uf: string | null };
+type CepLookup = {
+  cep: string;
+  logradouro: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  fonte: string;
+};
+
+/// Os mesmos campos do formulário, no formato que a API devolve.
+export type ClienteExistente = {
+  id: number;
+  nome: string;
+  razaoSocial: string | null;
+  cnpj: string | null;
+  idWhatsapp: string;
+  escalation: string;
+  telefone: string | null;
+  site: string | null;
+  cep: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  slaMinutos: number | null;
+  observacoes: string | null;
+  responsavelInterno?: { id: number } | null;
+};
 
 const CAMPOS_VAZIOS = {
   nome: '', razaoSocial: '', cnpj: '', idWhatsapp: '', escalation: '', telefone: '', site: '',
@@ -29,10 +59,48 @@ const CAMPOS_VAZIOS = {
   slaMinutos: '', observacoes: '', responsavelInternoId: '',
 };
 
-export function ClientForm({ colaboradores }: { colaboradores: Colaborador[] }) {
+/// Converte o cliente vindo da API para o estado do formulário (tudo string).
+function camposDoCliente(cliente: ClienteExistente): typeof CAMPOS_VAZIOS {
+  return {
+    nome: cliente.nome ?? '',
+    razaoSocial: cliente.razaoSocial ?? '',
+    cnpj: cliente.cnpj ?? '',
+    idWhatsapp: cliente.idWhatsapp ?? '',
+    escalation: cliente.escalation ?? '',
+    telefone: cliente.telefone ?? '',
+    site: cliente.site ?? '',
+    cep: cliente.cep ?? '',
+    logradouro: cliente.logradouro ?? '',
+    numero: cliente.numero ?? '',
+    complemento: cliente.complemento ?? '',
+    bairro: cliente.bairro ?? '',
+    cidade: cliente.cidade ?? '',
+    uf: cliente.uf ?? '',
+    slaMinutos: cliente.slaMinutos != null ? String(cliente.slaMinutos) : '',
+    observacoes: cliente.observacoes ?? '',
+    responsavelInternoId: cliente.responsavelInterno?.id != null ? String(cliente.responsavelInterno.id) : '',
+  };
+}
+
+/**
+ * Serve para cadastrar e para editar.
+ * Sem `cliente`, é um botão que abre o formulário em branco e faz POST.
+ * Com `cliente`, já nasce aberto e preenchido, e faz PATCH — assim os dois
+ * fluxos compartilham a busca de CNPJ/CEP e a validação, sem duplicar tela.
+ */
+export function ClientForm({
+  colaboradores,
+  cliente,
+  onFechar,
+}: {
+  colaboradores: Colaborador[];
+  cliente?: ClienteExistente;
+  onFechar?: () => void;
+}) {
+  const edicao = cliente != null;
   const router = useRouter();
-  const [aberto, setAberto] = useState(false);
-  const [campos, setCampos] = useState(CAMPOS_VAZIOS);
+  const [aberto, setAberto] = useState(edicao);
+  const [campos, setCampos] = useState(edicao ? camposDoCliente(cliente) : CAMPOS_VAZIOS);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [issues, setIssues] = useState<Record<string, string[] | undefined> | null>(null);
@@ -61,6 +129,7 @@ export function ClientForm({ colaboradores }: { colaboradores: Colaborador[] }) 
       }
 
       const info = data as CnpjLookup;
+      setAvisoBusca(`Dados preenchidos a partir da ${info.fonte}. Confira antes de salvar.`);
       setCampos((atual) => ({
         ...atual,
         // Só preenche o que ainda está vazio, para não sobrescrever o que a pessoa digitou.
@@ -101,6 +170,7 @@ export function ClientForm({ colaboradores }: { colaboradores: Colaborador[] }) 
       }
 
       const info = data as CepLookup;
+      setAvisoBusca(`Endereço preenchido a partir do ${info.fonte}.`);
       setCampos((atual) => ({
         ...atual,
         logradouro: info.logradouro || atual.logradouro,
@@ -144,28 +214,36 @@ export function ClientForm({ colaboradores }: { colaboradores: Colaborador[] }) 
     };
 
     try {
-      const response = await fetch('/api/clientes', {
-        method: 'POST',
+      const response = await fetch(edicao ? `/api/clientes/${cliente.id}` : '/api/clientes', {
+        method: edicao ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setError(data.error || 'Erro ao cadastrar cliente');
+        setError(data.error || (edicao ? 'Erro ao salvar o cliente' : 'Erro ao cadastrar cliente'));
         setIssues(data.issues || null);
         return;
       }
 
       setSucesso(true);
-      setCampos(CAMPOS_VAZIOS);
+      // Na edição os campos continuam como estão: a pessoa acabou de digitá-los
+      // e limpar a tela pareceria que a alteração se perdeu.
+      if (!edicao) setCampos(CAMPOS_VAZIOS);
       router.refresh();
+      if (edicao) onFechar?.();
     } catch {
-      setError('Não foi possível confirmar a resposta do servidor — a lista foi atualizada, confira se o cliente já aparece abaixo.');
+      setError('Não foi possível confirmar a resposta do servidor — a lista foi atualizada, confira se a alteração já aparece abaixo.');
       router.refresh();
     } finally {
       setPending(false);
     }
+  }
+
+  function fechar() {
+    setAberto(false);
+    onFechar?.();
   }
 
   if (!aberto) {
@@ -179,10 +257,10 @@ export function ClientForm({ colaboradores }: { colaboradores: Colaborador[] }) 
   return (
     <Card>
       <CardHeader
-        title="Novo cliente"
+        title={edicao ? `Editar ${cliente.nome}` : 'Novo cliente'}
         description="Informe o CNPJ ou o CEP para preencher os dados automaticamente."
         action={
-          <Button variant="ghost" size="sm" onClick={() => setAberto(false)}>
+          <Button variant="ghost" size="sm" onClick={fechar}>
             Fechar
           </Button>
         }
@@ -309,9 +387,11 @@ export function ClientForm({ colaboradores }: { colaboradores: Colaborador[] }) 
 
           <div className="flex items-center gap-3">
             <Button type="submit" variant="primary" disabled={pending}>
-              {pending ? 'Salvando...' : 'Cadastrar cliente'}
+              {pending ? 'Salvando...' : edicao ? 'Salvar alterações' : 'Cadastrar cliente'}
             </Button>
-            {sucesso ? <span className="text-xs text-ok">Cliente cadastrado com sucesso.</span> : null}
+            {sucesso ? (
+              <span className="text-xs text-ok">{edicao ? 'Alterações salvas.' : 'Cliente cadastrado com sucesso.'}</span>
+            ) : null}
           </div>
         </form>
       </CardBody>

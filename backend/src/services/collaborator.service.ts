@@ -87,3 +87,57 @@ export async function updateCollaborator(collaboratorId: number, data: Collabora
   const depois = await collaboratorRepository.update(tenantId, collaboratorId, data);
   return { antes: existing, depois };
 }
+
+export class CollaboratorHasHistoryError extends Error {
+  constructor(
+    message: string,
+    readonly detalhes: { turnos: number; escalas: number; ferias: number; ausencias: number; clientes: number; usuario: number }
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Remove o colaborador, mas só quando ele não deixa órfão.
+ *
+ * Quem já apareceu numa escala, tirou férias ou responde por um cliente tem
+ * histórico que a auditoria e os relatórios referenciam — apagar reescreveria
+ * o passado. Para quem saiu da empresa o caminho certo é desativar
+ * (`ativo: false`): ele some da geração de turnos e das listas de seleção, e
+ * os registros antigos continuam íntegros.
+ */
+export async function deleteCollaborator(collaboratorId: number, user?: JwtPayload) {
+  const tenantId = requireTenant(user);
+
+  const existing = await collaboratorRepository.findById(tenantId, collaboratorId);
+  if (!existing) throw new CollaboratorNotFoundError('Colaborador não encontrado');
+
+  const teamIds = await getVisibleTeamIds(user);
+  if (!teamIds.includes(existing.equipeId)) {
+    throw new ForbiddenTeamError('Você não tem permissão para remover colaboradores desta equipe');
+  }
+
+  const [turnos, escalas, ferias, ausencias, clientes, usuario] = await collaboratorRepository.contarVinculos(
+    tenantId,
+    collaboratorId
+  );
+
+  if (turnos + escalas + ferias + ausencias + clientes + usuario > 0) {
+    const partes = [
+      turnos > 0 ? `${turnos} turno(s)` : null,
+      escalas > 0 ? `${escalas} atribuição(ões) de escala` : null,
+      ferias > 0 ? `${ferias} registro(s) de férias` : null,
+      ausencias > 0 ? `${ausencias} ausência(s)` : null,
+      clientes > 0 ? `${clientes} cliente(s) sob sua responsabilidade` : null,
+      usuario > 0 ? 'um usuário vinculado' : null,
+    ].filter(Boolean);
+
+    throw new CollaboratorHasHistoryError(
+      `${existing.nome} tem ${partes.join(', ')} e não pode ser apagado sem quebrar o histórico. Desative o cadastro: ele sai da escala e das listas, e os registros antigos continuam válidos.`,
+      { turnos, escalas, ferias, ausencias, clientes, usuario }
+    );
+  }
+
+  await collaboratorRepository.remove(tenantId, collaboratorId);
+  return existing;
+}

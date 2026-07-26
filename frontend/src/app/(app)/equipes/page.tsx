@@ -1,10 +1,11 @@
 import { Users } from 'lucide-react';
 import { DataStatus } from '@/components/data-status';
-import { Badge, Card, EmptyState, PageHeader } from '@/components/ui';
+import { Card, EmptyState, PageHeader } from '@/components/ui';
 import { fetchApiSafe } from '@/lib/api';
 import { requirePermissionSession } from '@/lib/session';
 import { PERMISSIONS, can } from '@/lib/session-types';
 import { TeamForm } from './team-form';
+import { TeamCard } from './team-card';
 
 type Team = {
   id: number;
@@ -26,6 +27,8 @@ export default async function EquipesPage() {
   ]);
 
   const podeCriar = can(session.permissoes, PERMISSIONS.TEAM_CREATE);
+  const podeEditar = can(session.permissoes, PERMISSIONS.TEAM_EDIT);
+  const podeRemover = can(session.permissoes, PERMISSIONS.TEAM_DELETE);
 
   return (
     <>
@@ -53,38 +56,13 @@ export default async function EquipesPage() {
       ) : (
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {teamsResult.data.map((team) => (
-            <Card key={team.id} className="flex flex-col p-4 sm:p-5">
-              <div className="flex items-start justify-between gap-2">
-                <h2 className="min-w-0 truncate text-base font-semibold text-ink">{team.nome}</h2>
-                <Badge tone={team.ativo ? 'ok' : 'neutral'}>{team.ativo ? 'Ativa' : 'Inativa'}</Badge>
-              </div>
-
-              <p className="mt-1 text-xs text-ink-muted">{team.cliente?.nome ?? 'Estrutura interna'}</p>
-
-              {team.gestores.length > 0 ? (
-                <p className="mt-2 text-xs text-ink-subtle">
-                  Gestão: {team.gestores.map((item) => item.gestor.nome).join(', ')}
-                </p>
-              ) : null}
-
-              <div className="mt-4 flex-1 border-t border-line pt-3">
-                <p className="eyebrow mb-2">
-                  {team.colaboradores.length} {team.colaboradores.length === 1 ? 'colaborador' : 'colaboradores'}
-                </p>
-                {team.colaboradores.length === 0 ? (
-                  <p className="text-xs text-ink-subtle">Nenhum colaborador ativo nesta equipe ainda.</p>
-                ) : (
-                  <ul className="flex flex-col gap-1.5">
-                    {team.colaboradores.map((colaborador) => (
-                      <li key={colaborador.id} className="flex items-center justify-between gap-2 text-sm">
-                        <span className="truncate text-ink">{colaborador.nome}</span>
-                        <span className="shrink-0 text-2xs text-ink-subtle">{colaborador.cargo}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </Card>
+            <TeamCard
+              key={team.id}
+              team={team}
+              clients={clientsResult.data}
+              podeEditar={podeEditar}
+              podeRemover={podeRemover}
+            />
           ))}
         </div>
       )}

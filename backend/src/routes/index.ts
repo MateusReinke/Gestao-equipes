@@ -75,11 +75,13 @@ router.get('/clientes/:id/plantonista', auth(), requirePermission(P.SHIFT_VIEW),
 router.get('/api/equipes', auth(), requirePermission(P.TEAM_VIEW), asyncHandler(teamController.list));
 router.post('/api/equipes', auth(), requirePermission(P.TEAM_CREATE), asyncHandler(teamController.create));
 router.patch('/api/equipes/:id', auth(), requirePermission(P.TEAM_EDIT), asyncHandler(teamController.update));
+router.delete('/api/equipes/:id', auth(), requirePermission(P.TEAM_DELETE), asyncHandler(teamController.remove));
 
 // ---------- Colaboradores ----------
 router.get('/api/colaboradores', auth(), requirePermission(P.COLLABORATOR_VIEW), asyncHandler(collaboratorController.list));
 router.post('/api/colaboradores', auth(), requirePermission(P.COLLABORATOR_CREATE), asyncHandler(collaboratorController.create));
 router.patch('/api/colaboradores/:id', auth(), requirePermission(P.COLLABORATOR_EDIT), asyncHandler(collaboratorController.update));
+router.delete('/api/colaboradores/:id', auth(), requirePermission(P.COLLABORATOR_DELETE), asyncHandler(collaboratorController.remove));
 
 // ---------- Escalas (regras) ----------
 router.get('/api/escalas', auth(), requirePermission(P.SCHEDULE_VIEW), asyncHandler(scaleController.list));

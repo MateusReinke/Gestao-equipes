@@ -7,9 +7,38 @@ import { Alert, Button, Card, CardBody, CardHeader, Field, Input, Select } from 
 
 type Team = { id: number; nome: string };
 
-export function CollaboratorForm({ teams }: { teams: Team[] }) {
+export type ColaboradorExistente = {
+  id: number;
+  nome: string;
+  email: string;
+  telefone: string;
+  cargo: string;
+  tipoContrato: string;
+  modeloTrabalho: string;
+  fazPlantao: boolean;
+  sobreAviso: boolean;
+  ativo: boolean;
+  equipe: { id: number; nome: string };
+};
+
+/**
+ * Serve para cadastrar e para editar.
+ * Sem `colaborador`, é um botão que abre o formulário em branco e faz POST.
+ * Com `colaborador`, já nasce aberto e preenchido, e faz PATCH.
+ */
+export function CollaboratorForm({
+  teams,
+  colaborador,
+  onFechar,
+}: {
+  teams: Team[];
+  colaborador?: ColaboradorExistente;
+  onFechar?: () => void;
+}) {
+  const edicao = colaborador != null;
+  const id = (campo: string) => `${campo}-${colaborador?.id ?? 'novo'}`;
   const router = useRouter();
-  const [aberto, setAberto] = useState(false);
+  const [aberto, setAberto] = useState(edicao);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [issues, setIssues] = useState<Record<string, string[] | undefined> | null>(null);
@@ -33,28 +62,31 @@ export function CollaboratorForm({ teams }: { teams: Team[] }) {
       modeloTrabalho: String(formData.get('modeloTrabalho') || ''),
       fazPlantao: formData.get('fazPlantao') === 'on',
       sobreAviso: formData.get('sobreAviso') === 'on',
-      ativo: true,
+      ativo: formData.get('ativo') !== 'false',
     };
 
+    const form = event.currentTarget;
+
     try {
-      const response = await fetch('/api/colaboradores', {
-        method: 'POST',
+      const response = await fetch(edicao ? `/api/colaboradores/${colaborador.id}` : '/api/colaboradores', {
+        method: edicao ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setError(data.error || 'Erro ao cadastrar colaborador');
+        setError(data.error || (edicao ? 'Erro ao salvar o colaborador' : 'Erro ao cadastrar colaborador'));
         setIssues(data.issues || null);
         return;
       }
 
       setSucesso(true);
-      event.currentTarget.reset();
+      if (!edicao) form.reset();
       router.refresh();
+      if (edicao) onFechar?.();
     } catch {
-      setError('Não foi possível confirmar a resposta do servidor — a lista foi atualizada, confira se o colaborador já aparece na tabela.');
+      setError('Não foi possível confirmar a resposta do servidor — a lista foi atualizada, confira se a alteração já aparece na tabela.');
       router.refresh();
     } finally {
       setPending(false);
@@ -76,34 +108,34 @@ export function CollaboratorForm({ teams }: { teams: Team[] }) {
   return (
     <Card>
       <CardHeader
-        title="Novo colaborador"
+        title={edicao ? `Editar ${colaborador.nome}` : 'Novo colaborador'}
         description="A disponibilidade define quem pode ser escalado para plantão e sobreaviso."
         action={
-          <Button variant="ghost" size="sm" onClick={() => setAberto(false)}>
+          <Button variant="ghost" size="sm" onClick={() => { setAberto(false); onFechar?.(); }}>
             Fechar
           </Button>
         }
       />
       <CardBody>
         <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="Nome completo" htmlFor="nome">
-            <Input id="nome" name="nome" required minLength={3} placeholder="Ana Lima" />
+          <Field label="Nome completo" htmlFor={id('nome')}>
+            <Input id={id('nome')} name="nome" required minLength={3} placeholder="Ana Lima" defaultValue={colaborador?.nome ?? ''} />
           </Field>
 
-          <Field label="E-mail" htmlFor="email">
-            <Input id="email" name="email" type="email" required placeholder="ana.lima@empresa.com" />
+          <Field label="E-mail" htmlFor={id('email')}>
+            <Input id={id('email')} name="email" type="email" required placeholder="ana.lima@empresa.com" defaultValue={colaborador?.email ?? ''} />
           </Field>
 
-          <Field label="Telefone" htmlFor="telefone" hint="DDD + número">
-            <Input id="telefone" name="telefone" required pattern="[\d\s()-]{10,20}" placeholder="11988887777" inputMode="tel" />
+          <Field label="Telefone" htmlFor={id('telefone')} hint="DDD + número">
+            <Input id={id('telefone')} name="telefone" required pattern="[\d\s()-]{10,20}" placeholder="11988887777" inputMode="tel" defaultValue={colaborador?.telefone ?? ''} />
           </Field>
 
-          <Field label="Cargo / função" htmlFor="cargo">
-            <Input id="cargo" name="cargo" required minLength={2} placeholder="Analista de NOC" />
+          <Field label="Cargo / função" htmlFor={id('cargo')}>
+            <Input id={id('cargo')} name="cargo" required minLength={2} placeholder="Analista de NOC" defaultValue={colaborador?.cargo ?? ''} />
           </Field>
 
-          <Field label="Equipe" htmlFor="equipeId">
-            <Select id="equipeId" name="equipeId" required defaultValue="">
+          <Field label="Equipe" htmlFor={id('equipeId')}>
+            <Select id={id('equipeId')} name="equipeId" required defaultValue={colaborador?.equipe.id != null ? String(colaborador.equipe.id) : ''}>
               <option value="" disabled>
                 Selecione...
               </option>
@@ -115,8 +147,8 @@ export function CollaboratorForm({ teams }: { teams: Team[] }) {
             </Select>
           </Field>
 
-          <Field label="Tipo de contrato" htmlFor="tipoContrato">
-            <Select id="tipoContrato" name="tipoContrato" required defaultValue="clt">
+          <Field label="Tipo de contrato" htmlFor={id('tipoContrato')}>
+            <Select id={id('tipoContrato')} name="tipoContrato" required defaultValue={colaborador?.tipoContrato ?? 'clt'}>
               <option value="clt">CLT</option>
               <option value="pj">PJ</option>
               <option value="terceirizado">Terceirizado</option>
@@ -124,8 +156,8 @@ export function CollaboratorForm({ teams }: { teams: Team[] }) {
             </Select>
           </Field>
 
-          <Field label="Modelo de trabalho" htmlFor="modeloTrabalho">
-            <Select id="modeloTrabalho" name="modeloTrabalho" required defaultValue="presencial">
+          <Field label="Modelo de trabalho" htmlFor={id('modeloTrabalho')}>
+            <Select id={id('modeloTrabalho')} name="modeloTrabalho" required defaultValue={colaborador?.modeloTrabalho ?? 'presencial'}>
               <option value="presencial">Presencial</option>
               <option value="hibrido">Híbrido</option>
               <option value="remoto">Remoto</option>
@@ -136,19 +168,32 @@ export function CollaboratorForm({ teams }: { teams: Team[] }) {
             <legend className="field-label">Disponibilidade para escala</legend>
             <div className="flex flex-wrap gap-4">
               <label className="flex items-center gap-2 text-sm text-ink">
-                <input type="checkbox" name="fazPlantao" className="rounded border-line bg-bg" /> Faz plantão
+                <input type="checkbox" name="fazPlantao" defaultChecked={colaborador?.fazPlantao ?? false} className="rounded border-line bg-bg" /> Faz plantão
               </label>
               <label className="flex items-center gap-2 text-sm text-ink">
-                <input type="checkbox" name="sobreAviso" className="rounded border-line bg-bg" /> Fica de sobreaviso
+                <input type="checkbox" name="sobreAviso" defaultChecked={colaborador?.sobreAviso ?? false} className="rounded border-line bg-bg" /> Fica de sobreaviso
               </label>
             </div>
           </fieldset>
 
+          <Field
+            label="Situação"
+            htmlFor={id('ativo')}
+            hint="Inativo sai da geração de turnos e das listas, sem apagar o histórico"
+          >
+            <Select id={id('ativo')} name="ativo" defaultValue={colaborador && !colaborador.ativo ? 'false' : 'true'}>
+              <option value="true">Ativo</option>
+              <option value="false">Inativo</option>
+            </Select>
+          </Field>
+
           <div className="flex items-center gap-3 sm:col-span-2 lg:col-span-3">
             <Button type="submit" variant="primary" disabled={pending}>
-              {pending ? 'Salvando...' : 'Cadastrar colaborador'}
+              {pending ? 'Salvando...' : edicao ? 'Salvar alterações' : 'Cadastrar colaborador'}
             </Button>
-            {sucesso ? <span className="text-xs text-ok">Colaborador cadastrado com sucesso.</span> : null}
+            {sucesso ? (
+              <span className="text-xs text-ok">{edicao ? 'Alterações salvas.' : 'Colaborador cadastrado com sucesso.'}</span>
+            ) : null}
           </div>
 
           {error ? (

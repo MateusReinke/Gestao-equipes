@@ -258,8 +258,12 @@ export function Th({ children, className }: { children?: ReactNode; className?: 
   );
 }
 
-export function Td({ children, className }: { children?: ReactNode; className?: string }) {
-  return <td className={cx('px-4 py-3 align-top text-ink-muted', className)}>{children}</td>;
+export function Td({ children, className, colSpan }: { children?: ReactNode; className?: string; colSpan?: number }) {
+  return (
+    <td colSpan={colSpan} className={cx('px-4 py-3 align-top text-ink-muted', className)}>
+      {children}
+    </td>
+  );
 }
 
 export function Tr({ children, className }: { children: ReactNode; className?: string }) {

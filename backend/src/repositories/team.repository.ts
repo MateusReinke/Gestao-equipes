@@ -52,4 +52,22 @@ export const teamRepository = {
     await prisma.team.updateMany({ where: { id, tenantId }, data });
     return prisma.team.findFirst({ where: { id, tenantId }, include: { cliente: true } });
   },
+  /// O que segura a exclusão de uma equipe.
+  /// Escala não entra na conta: ela não aponta para a equipe, e sim para os
+  /// colaboradores — se não sobrou colaborador, não sobrou atribuição.
+  contarVinculos(tenantId: number, id: number) {
+    return prisma.$transaction([
+      prisma.collaborator.count({ where: { tenantId, equipeId: id } }),
+      prisma.shift.count({ where: { tenantId, equipeId: id } }),
+    ]);
+  },
+  async remove(tenantId: number, id: number) {
+    // Gestores da equipe e compartilhamentos apontados a ela são vínculos
+    // administrativos: somem junto, sem bloquear a exclusão.
+    return prisma.$transaction([
+      prisma.managerTeam.deleteMany({ where: { tenantId, equipeId: id } }),
+      prisma.shareGrant.deleteMany({ where: { tenantId, equipeId: id } }),
+      prisma.team.deleteMany({ where: { id, tenantId } }),
+    ]);
+  },
 };

@@ -10,6 +10,8 @@ import {
   TeamNotFoundError,
   NoActiveTenantError,
   CollaboratorNotFoundError,
+  deleteCollaborator,
+  CollaboratorHasHistoryError,
 } from '../services/collaborator.service';
 import { auditFromRequest } from '../services/audit.service';
 
@@ -19,6 +21,11 @@ function handleError(error: unknown, res: Response) {
   if (error instanceof TeamNotFoundError) return res.status(400).json({ error: error.message });
   if (error instanceof NoActiveTenantError) return res.status(409).json({ error: error.message });
   if (error instanceof CollaboratorNotFoundError) return res.status(404).json({ error: error.message });
+  // 409: o pedido faz sentido, mas o histórico impede — a mensagem aponta a
+  // saída (desativar em vez de apagar).
+  if (error instanceof CollaboratorHasHistoryError) {
+    return res.status(409).json({ error: error.message, detalhes: error.detalhes });
+  }
   throw error;
 }
 
@@ -64,6 +71,22 @@ export const collaboratorController = {
         depois,
       });
       return res.json(depois);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async remove(req: Request, res: Response) {
+    try {
+      const colaborador = await deleteCollaborator(Number(req.params.id), req.user);
+      await auditFromRequest(req, {
+        acao: 'delete',
+        entidade: 'colaborador',
+        entidadeId: req.params.id,
+        descricao: `Removeu o colaborador "${colaborador.nome}"`,
+        antes: colaborador,
+      });
+      return res.status(204).send();
     } catch (error) {
       return handleError(error, res);
     }

@@ -1,5 +1,6 @@
 import { Badge, type BadgeTone } from '@/components/ui';
 import { formatDateShort, weekdayLabel } from '@/lib/format';
+import { ShiftActions } from './shift-actions';
 
 export type Turno = {
   id: number;
@@ -30,7 +31,17 @@ const TIPO_TONE: Record<string, BadgeTone> = {
 
 /// Grade semanal: uma coluna por dia. Rola na horizontal dentro do card em telas
 /// pequenas, para a página nunca rolar de lado.
-export function ShiftWeekGrid({ dias, turnos }: { dias: string[]; turnos: Turno[] }) {
+export function ShiftWeekGrid({
+  dias,
+  turnos,
+  podeEditar = false,
+  colaboradores = [],
+}: {
+  dias: string[];
+  turnos: Turno[];
+  podeEditar?: boolean;
+  colaboradores?: Array<{ id: number; nome: string }>;
+}) {
   const hoje = new Date().toISOString().slice(0, 10);
 
   const porDia = new Map<string, Turno[]>();
@@ -95,6 +106,15 @@ export function ShiftWeekGrid({ dias, turnos }: { dias: string[]; turnos: Turno[
                         <p className="mt-1 truncate text-2xs text-info" title={`Originalmente: ${turno.colaboradorOriginal.nome}`}>
                           era {turno.colaboradorOriginal.nome.split(' ')[0]}
                         </p>
+                      ) : null}
+
+                      {podeEditar ? (
+                        <ShiftActions
+                          turnoId={turno.id}
+                          colaboradorAtualId={turno.colaborador.id}
+                          status={turno.status}
+                          colaboradores={colaboradores}
+                        />
                       ) : null}
                     </article>
                   ))

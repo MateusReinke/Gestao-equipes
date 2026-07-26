@@ -7,6 +7,7 @@ import { requirePermissionSession } from '@/lib/session';
 import { PERMISSIONS, can } from '@/lib/session-types';
 import { ESCALA_DESCRICOES, ESCALA_LABELS, weekdayLabel } from '@/lib/format';
 import { ScaleForm } from './scale-form';
+import { DeleteButton } from '@/components/delete-button';
 
 type Escala = {
   id: number;
@@ -42,6 +43,7 @@ export default async function EscalasPage() {
   ]);
 
   const podeCriar = can(session.permissoes, PERMISSIONS.SCHEDULE_CREATE);
+  const podeRemover = can(session.permissoes, PERMISSIONS.SCHEDULE_DELETE);
   const podeGerar = can(session.permissoes, PERMISSIONS.SCHEDULE_GENERATE);
 
   return (
@@ -123,6 +125,15 @@ export default async function EscalasPage() {
                   </ol>
                 )}
               </div>
+
+              {podeRemover ? (
+                <div className="mt-3 flex justify-end border-t border-line pt-3">
+                  <DeleteButton
+                    url={`/api/escalas/${escala.id}`}
+                    confirmacao={`Remover a escala ${escala.nome}? Os turnos já gerados continuam.`}
+                  />
+                </div>
+              ) : null}
             </Card>
           ))}
         </div>
