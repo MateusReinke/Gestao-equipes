@@ -3,8 +3,10 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Briefcase, CalendarDays, LayoutDashboard, Shield, Users, UserSquare2, UserCog, Plane } from 'lucide-react';
+import type { SessionUser } from '@/lib/api';
+import { ROUTE_ROLES } from '@/lib/permissions';
 
-const items = [
+const items: { href: string; label: string; icon: typeof LayoutDashboard }[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/clientes', label: 'Clientes', icon: Briefcase },
   { href: '/equipes', label: 'Equipes', icon: Users },
@@ -15,8 +17,9 @@ const items = [
   { href: '/ferias', label: 'Férias', icon: Plane },
 ];
 
-export function Sidebar() {
+export function Sidebar({ role }: { role: SessionUser['role'] }) {
   const pathname = usePathname();
+  const visibleItems = items.filter((item) => ROUTE_ROLES[item.href]?.includes(role));
 
   return (
     <aside className="hidden w-72 border-r border-slate-800 bg-slate-900/70 p-6 md:block">
@@ -27,7 +30,7 @@ export function Sidebar() {
       </div>
 
       <nav className="mt-6 space-y-2">
-        {items.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href;
           return (

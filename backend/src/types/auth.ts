@@ -1,5 +1,8 @@
+export type UserRole = 'admin' | 'gestor' | 'rh' | 'monitoramento' | 'cliente';
+
 export type JwtPayload = {
   sub: string;
   userId: number;
-  role: 'admin' | 'gestor';
+  role: UserRole;
+  clienteId?: number | null;
 };

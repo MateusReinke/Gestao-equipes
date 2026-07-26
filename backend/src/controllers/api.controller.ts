@@ -1,9 +1,26 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { z } from 'zod';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { JwtPayload } from '../types/auth';
+
+const collaboratorSchema = z.object({
+  nome: z.string().trim().min(3, 'Nome deve ter ao menos 3 caracteres'),
+  email: z.string().trim().toLowerCase().email('E-mail inválido'),
+  telefone: z
+    .string()
+    .trim()
+    .regex(/^\d{10,11}$/, 'Telefone deve conter DDD + número (10 ou 11 dígitos)'),
+  cargo: z.string().trim().min(2, 'Cargo/função é obrigatório'),
+  equipeId: z.coerce.number().int().positive('Selecione uma equipe válida'),
+  tipoContrato: z.enum(['clt', 'pj', 'terceirizado', 'estagio']),
+  modeloTrabalho: z.enum(['presencial', 'hibrido', 'remoto']),
+  fazPlantao: z.coerce.boolean().default(false),
+  sobreAviso: z.coerce.boolean().default(false),
+  ativo: z.coerce.boolean().default(true),
+});
 
 function dayBounds(date = new Date()) {
   const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -26,13 +43,26 @@ function isTimeBetween(nowMinutes: number, start: string, end: string) {
 
 async function getVisibleTeamIds(user?: JwtPayload) {
   if (!user) return [];
-  if (user.role === 'admin') {
+  if (user.role === 'admin' || user.role === 'rh' || user.role === 'monitoramento') {
     const teams = await prisma.team.findMany({ select: { id: true } });
+    return teams.map((team: { id: number }) => team.id);
+  }
+
+  if (user.role === 'cliente') {
+    if (!user.clienteId) return [];
+    const teams = await prisma.team.findMany({ where: { clienteId: user.clienteId }, select: { id: true } });
     return teams.map((team: { id: number }) => team.id);
   }
 
   const managerTeams = await prisma.managerTeam.findMany({ where: { gestorId: user.userId }, select: { equipeId: true } });
   return managerTeams.map((item: { equipeId: number }) => item.equipeId);
+}
+
+function assertClientAccess(user: JwtPayload | undefined, clientId: number) {
+  if (user?.role === 'cliente' && user.clienteId !== clientId) {
+    return false;
+  }
+  return true;
 }
 
 async function getCurrentOnCall(clientId?: number, user?: JwtPayload) {
@@ -129,8 +159,26 @@ export const apiController = {
     const valid = await bcrypt.compare(String(senha || ''), user.senhaHash);
     if (!valid) return res.status(401).json({ error: 'Credenciais inválidas' });
 
-    const token = jwt.sign({ sub: user.email, userId: user.id, role: user.role }, env.jwtSecret, { expiresIn: '12h' });
-    return res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, role: user.role } });
+    const token = jwt.sign(
+      { sub: user.email, userId: user.id, role: user.role, clienteId: user.clienteId },
+      env.jwtSecret,
+      { expiresIn: '12h' },
+    );
+    return res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, role: user.role, clienteId: user.clienteId } });
+  },
+
+  async me(req: Request, res: Response) {
+    const jwtUser = (req as Request & { user?: JwtPayload }).user;
+    if (!jwtUser) return res.status(401).json({ error: 'Não autenticado' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: jwtUser.userId },
+      select: { id: true, nome: true, email: true, role: true, clienteId: true, colaboradorId: true },
+    });
+    if (!user || !(await prisma.user.count({ where: { id: jwtUser.userId, ativo: true } }))) {
+      return res.status(401).json({ error: 'Sessão inválida' });
+    }
+    return res.json(user);
   },
 
   async dashboard(req: Request, res: Response) {
@@ -139,7 +187,9 @@ export const apiController = {
   },
 
   async currentOnCall(req: Request, res: Response) {
-    const active = await getCurrentOnCall(undefined, (req as Request & { user?: JwtPayload }).user);
+    const jwtUser = (req as Request & { user?: JwtPayload }).user;
+    const clientId = jwtUser?.role === 'cliente' ? jwtUser.clienteId ?? undefined : undefined;
+    const active = await getCurrentOnCall(clientId, jwtUser);
     const now = new Date();
     return res.json({
       generatedAt: now.toISOString(),
@@ -150,6 +200,9 @@ export const apiController = {
 
   async clientResponsible(req: Request, res: Response) {
     const clientId = Number(req.params.id);
+    const jwtUser = (req as Request & { user?: JwtPayload }).user;
+    if (!assertClientAccess(jwtUser, clientId)) return res.status(403).json({ error: 'Sem permissão para este cliente' });
+
     const client = await prisma.client.findUnique({ where: { id: clientId }, include: { responsavelInterno: { include: { equipe: true } } } });
     if (!client) return res.status(404).json({ error: 'Cliente não encontrado' });
     return res.json({
@@ -160,13 +213,18 @@ export const apiController = {
 
   async clientOnCall(req: Request, res: Response) {
     const clientId = Number(req.params.id);
-    const atuais = await getCurrentOnCall(clientId, (req as Request & { user?: JwtPayload }).user);
-    const proximos = await getUpcomingOnCall(clientId, (req as Request & { user?: JwtPayload }).user);
+    const jwtUser = (req as Request & { user?: JwtPayload }).user;
+    if (!assertClientAccess(jwtUser, clientId)) return res.status(403).json({ error: 'Sem permissão para este cliente' });
+
+    const atuais = await getCurrentOnCall(clientId, jwtUser);
+    const proximos = await getUpcomingOnCall(clientId, jwtUser);
     return res.json({ clientId, atuais, proximos });
   },
 
-  async clients(_: Request, res: Response) {
-    const data = await prisma.client.findMany({ include: { responsavelInterno: { include: { equipe: true } }, equipes: true } });
+  async clients(req: Request, res: Response) {
+    const jwtUser = (req as Request & { user?: JwtPayload }).user;
+    const where = jwtUser?.role === 'cliente' ? { id: jwtUser.clienteId ?? -1 } : {};
+    const data = await prisma.client.findMany({ where, include: { responsavelInterno: { include: { equipe: true } }, equipes: true } });
     return res.json(data);
   },
 
@@ -180,6 +238,31 @@ export const apiController = {
     const teamIds = await getVisibleTeamIds((req as Request & { user?: JwtPayload }).user);
     const data = await prisma.collaborator.findMany({ where: { equipeId: { in: teamIds } }, include: { equipe: true, ferias: true } });
     return res.json(data);
+  },
+
+  async createCollaborator(req: Request, res: Response) {
+    const parsed = collaboratorSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos', issues: parsed.error.flatten().fieldErrors });
+    }
+
+    const teamIds = await getVisibleTeamIds((req as Request & { user?: JwtPayload }).user);
+    if (!teamIds.includes(parsed.data.equipeId)) {
+      return res.status(403).json({ error: 'Você não tem permissão para cadastrar colaboradores nesta equipe' });
+    }
+
+    const existing = await prisma.collaborator.findUnique({ where: { email: parsed.data.email } });
+    if (existing) {
+      return res.status(409).json({ error: 'Já existe um colaborador com este e-mail' });
+    }
+
+    const team = await prisma.team.findUnique({ where: { id: parsed.data.equipeId } });
+    if (!team) {
+      return res.status(400).json({ error: 'Equipe informada não existe' });
+    }
+
+    const collaborator = await prisma.collaborator.create({ data: parsed.data, include: { equipe: true } });
+    return res.status(201).json(collaborator);
   },
 
   async managers(_: Request, res: Response) {

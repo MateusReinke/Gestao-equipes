@@ -1,12 +1,19 @@
 import { DashboardLayout } from '@/components/layout';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, getCurrentUser } from '@/lib/api';
+import { ROUTE_ROLES } from '@/lib/permissions';
 
 type Vacation = { id: number; dataInicio: string; dataFim: string; status: string; colaborador: { nome: string; equipe: { nome: string } } };
 
 export default async function FeriasPage() {
+  const allow = ROUTE_ROLES['/ferias'];
+  const user = await getCurrentUser();
+  if (!user || !allow.includes(user.role)) {
+    return <DashboardLayout allow={allow}>{null}</DashboardLayout>;
+  }
+
   const vacations = await fetchApi<Vacation[]>('/api/ferias');
   return (
-    <DashboardLayout>
+    <DashboardLayout allow={allow}>
       <div className="grid gap-4 xl:grid-cols-2">
         {vacations.map((item) => (
           <section key={item.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">

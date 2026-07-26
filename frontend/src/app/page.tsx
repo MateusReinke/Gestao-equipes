@@ -1,6 +1,7 @@
 import { DataStatus } from '@/components/data-status';
 import { DashboardLayout } from '@/components/layout';
-import { fetchApiSafe } from '@/lib/api';
+import { fetchApiSafe, getCurrentUser } from '@/lib/api';
+import { ROUTE_ROLES } from '@/lib/permissions';
 
 type DashboardData = {
   metrics: { clients: number; teams: number; collaborators: number; currentOnCall: number; activeVacations: number; activeScales: number };
@@ -28,10 +29,16 @@ const emptyDashboard: DashboardData = {
 };
 
 export default async function HomePage() {
+  const allow = ROUTE_ROLES['/'];
+  const user = await getCurrentUser();
+  if (!user || !allow.includes(user.role)) {
+    return <DashboardLayout allow={allow}>{null}</DashboardLayout>;
+  }
+
   const { data, error } = await fetchApiSafe<DashboardData>('/api/dashboard', emptyDashboard);
 
   return (
-    <DashboardLayout>
+    <DashboardLayout allow={allow}>
       <DataStatus error={error} />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">

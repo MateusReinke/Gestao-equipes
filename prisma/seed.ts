@@ -22,11 +22,11 @@ async function main() {
   ]);
 
   const [ana, bruno, carla, diego, erika] = await Promise.all([
-    prisma.collaborator.create({ data: { nome: 'Ana Lima', email: 'ana.lima@gestao.local', telefone: '11988881111', equipeId: noc.id, tipoContrato: 'clt', modeloTrabalho: 'hibrido', ativo: true } }),
-    prisma.collaborator.create({ data: { nome: 'Bruno Costa', email: 'bruno.costa@gestao.local', telefone: '11988882222', equipeId: noc.id, tipoContrato: 'clt', modeloTrabalho: 'remoto', ativo: true } }),
-    prisma.collaborator.create({ data: { nome: 'Carla Souza', email: 'carla.souza@gestao.local', telefone: '11988883333', equipeId: field.id, tipoContrato: 'pj', modeloTrabalho: 'presencial', ativo: true } }),
-    prisma.collaborator.create({ data: { nome: 'Diego Martins', email: 'diego.martins@gestao.local', telefone: '11988884444', equipeId: service.id, tipoContrato: 'clt', modeloTrabalho: 'hibrido', ativo: true } }),
-    prisma.collaborator.create({ data: { nome: 'Erika Rocha', email: 'erika.rocha@gestao.local', telefone: '11988885555', equipeId: service.id, tipoContrato: 'terceirizado', modeloTrabalho: 'remoto', ativo: true } }),
+    prisma.collaborator.create({ data: { nome: 'Ana Lima', email: 'ana.lima@gestao.local', telefone: '11988881111', cargo: 'Analista de NOC', equipeId: noc.id, tipoContrato: 'clt', modeloTrabalho: 'hibrido', fazPlantao: true, sobreAviso: false, ativo: true } }),
+    prisma.collaborator.create({ data: { nome: 'Bruno Costa', email: 'bruno.costa@gestao.local', telefone: '11988882222', cargo: 'Analista de NOC', equipeId: noc.id, tipoContrato: 'clt', modeloTrabalho: 'remoto', fazPlantao: true, sobreAviso: true, ativo: true } }),
+    prisma.collaborator.create({ data: { nome: 'Carla Souza', email: 'carla.souza@gestao.local', telefone: '11988883333', cargo: 'Técnica de Campo', equipeId: field.id, tipoContrato: 'pj', modeloTrabalho: 'presencial', fazPlantao: true, sobreAviso: false, ativo: true } }),
+    prisma.collaborator.create({ data: { nome: 'Diego Martins', email: 'diego.martins@gestao.local', telefone: '11988884444', cargo: 'Analista de Service Desk', equipeId: service.id, tipoContrato: 'clt', modeloTrabalho: 'hibrido', fazPlantao: false, sobreAviso: true, ativo: true } }),
+    prisma.collaborator.create({ data: { nome: 'Erika Rocha', email: 'erika.rocha@gestao.local', telefone: '11988885555', cargo: 'Analista de Service Desk', equipeId: service.id, tipoContrato: 'terceirizado', modeloTrabalho: 'remoto', fazPlantao: false, sobreAviso: false, ativo: true } }),
   ]);
 
   const [atlas, varejo] = await Promise.all([
@@ -102,9 +102,15 @@ async function main() {
 
   const adminHash = await bcrypt.hash('Admin@123', 10);
   const gestorHash = await bcrypt.hash('Gestor@123', 10);
+  const rhHash = await bcrypt.hash('Rh@12345', 10);
+  const monitoramentoHash = await bcrypt.hash('Monitor@123', 10);
+  const clienteHash = await bcrypt.hash('Cliente@123', 10);
 
   const admin = await prisma.user.create({ data: { nome: 'Administrador', email: 'admin@gestao.local', senhaHash: adminHash, role: 'admin', ativo: true } });
   const gestor = await prisma.user.create({ data: { nome: 'Marina Gestora', email: 'gestor@gestao.local', senhaHash: gestorHash, role: 'gestor', ativo: true, colaboradorId: ana.id } });
+  await prisma.user.create({ data: { nome: 'Renata RH', email: 'rh@gestao.local', senhaHash: rhHash, role: 'rh', ativo: true } });
+  await prisma.user.create({ data: { nome: 'Marcos Monitoramento', email: 'monitoramento@gestao.local', senhaHash: monitoramentoHash, role: 'monitoramento', ativo: true } });
+  await prisma.user.create({ data: { nome: 'Contato Banco Atlas', email: 'cliente@atlas.local', senhaHash: clienteHash, role: 'cliente', ativo: true, clienteId: atlas.id } });
 
   await prisma.managerTeam.createMany({ data: [
     { gestorId: admin.id, equipeId: noc.id },

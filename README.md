@@ -18,7 +18,7 @@ docker-compose up -d --build
 
 Após a subida:
 
-- Frontend: `http://localhost:53000`
+- Frontend: `http://localhost:4333`
 - Backend: `http://localhost:54000`
 - Healthcheck: `http://localhost:54000/health`
 - Admin padrão:
