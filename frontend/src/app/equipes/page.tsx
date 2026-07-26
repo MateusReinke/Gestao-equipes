@@ -1,13 +1,20 @@
 import { DataStatus } from '@/components/data-status';
 import { DashboardLayout } from '@/components/layout';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, getCurrentUser } from '@/lib/api';
+import { ROUTE_ROLES } from '@/lib/permissions';
 
 type Team = { id: number; nome: string; ativo: boolean; cliente?: { nome: string } | null; colaboradores: Array<{ id: number; nome: string }>; gestores: Array<{ gestor: { nome: string; email: string } }> };
 
 export default async function EquipesPage() {
+  const allow = ROUTE_ROLES['/equipes'];
+  const user = await getCurrentUser();
+  if (!user || !allow.includes(user.role)) {
+    return <DashboardLayout allow={allow}>{null}</DashboardLayout>;
+  }
+
   const teams = await fetchApi<Team[]>('/api/equipes');
   return (
-    <DashboardLayout>
+    <DashboardLayout allow={allow}>
       <div className="grid gap-4 xl:grid-cols-3">
         {teams.map((team) => (
           <section key={team.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">

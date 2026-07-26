@@ -1,12 +1,19 @@
 import { DashboardLayout } from '@/components/layout';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, getCurrentUser } from '@/lib/api';
+import { ROUTE_ROLES } from '@/lib/permissions';
 
 type OnCall = { id: number; data: string; horaInicio: string; horaFim: string; tipo: string; cliente?: { nome: string } | null; colaborador: { nome: string; equipe: { nome: string } } };
 
 export default async function PlantoesPage() {
+  const allow = ROUTE_ROLES['/plantoes'];
+  const user = await getCurrentUser();
+  if (!user || !allow.includes(user.role)) {
+    return <DashboardLayout allow={allow}>{null}</DashboardLayout>;
+  }
+
   const onCalls = await fetchApi<OnCall[]>('/api/plantoes');
   return (
-    <DashboardLayout>
+    <DashboardLayout allow={allow}>
       <div className="grid gap-4 xl:grid-cols-3">
         {onCalls.map((item) => (
           <section key={item.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">

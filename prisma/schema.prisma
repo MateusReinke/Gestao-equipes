@@ -10,6 +10,9 @@ datasource db {
 enum UserRole {
   admin
   gestor
+  rh
+  monitoramento
+  cliente
 }
 
 enum ContractType {
@@ -55,6 +58,7 @@ model Client {
   equipes               Team[]
   escalas               Scale[]
   plantoes              OnCall[]
+  usuarios              User[]
 
   @@map("clientes")
 }
@@ -105,9 +109,11 @@ model User {
   role            UserRole
   ativo           Boolean       @default(true)
   colaboradorId   Int?          @map("colaborador_id")
+  clienteId       Int?          @map("cliente_id")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
   colaborador     Collaborator? @relation(fields: [colaboradorId], references: [id])
+  cliente         Client?       @relation(fields: [clienteId], references: [id])
   gestorEquipes   ManagerTeam[]
 
   @@map("usuarios")

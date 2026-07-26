@@ -1,14 +1,21 @@
 import { DataStatus } from '@/components/data-status';
 import { DashboardLayout } from '@/components/layout';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, getCurrentUser } from '@/lib/api';
+import { ROUTE_ROLES } from '@/lib/permissions';
 
 type Scale = { id: number; nome: string; tipo: string; descricao: string; cliente?: { nome: string } | null; detalhes: Array<{ id: number; diaSemana: number; horaInicio: string; horaFim: string }>; colaboradores: Array<{ id: number; colaborador: { nome: string; equipe: { nome: string } } }> };
 const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 export default async function EscalasPage() {
+  const allow = ROUTE_ROLES['/escalas'];
+  const user = await getCurrentUser();
+  if (!user || !allow.includes(user.role)) {
+    return <DashboardLayout allow={allow}>{null}</DashboardLayout>;
+  }
+
   const scales = await fetchApi<Scale[]>('/api/escalas');
   return (
-    <DashboardLayout>
+    <DashboardLayout allow={allow}>
       <div className="space-y-4">
         {scales.map((scale) => (
           <section key={scale.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">

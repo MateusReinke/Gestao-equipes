@@ -1,19 +1,26 @@
 import { DataStatus } from '@/components/data-status';
 import { DashboardLayout } from '@/components/layout';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, getCurrentUser } from '@/lib/api';
+import { ROUTE_ROLES } from '@/lib/permissions';
 import { CollaboratorForm } from './collaborator-form';
 
 type Collaborator = { id: number; nome: string; email: string; telefone: string; cargo: string; tipoContrato: string; modeloTrabalho: string; fazPlantao: boolean; sobreAviso: boolean; ativo: boolean; equipe: { nome: string }; ferias: Array<{ id: number; status: string; dataInicio: string; dataFim: string }> };
 type Team = { id: number; nome: string };
 
 export default async function ColaboradoresPage() {
+  const allow = ROUTE_ROLES['/colaboradores'];
+  const user = await getCurrentUser();
+  if (!user || !allow.includes(user.role)) {
+    return <DashboardLayout allow={allow}>{null}</DashboardLayout>;
+  }
+
   const [collaborators, teams] = await Promise.all([
     fetchApi<Collaborator[]>('/api/colaboradores'),
     fetchApi<Team[]>('/api/equipes'),
   ]);
 
   return (
-    <DashboardLayout>
+    <DashboardLayout allow={allow}>
       <div className="flex flex-col gap-6">
         <CollaboratorForm teams={teams} />
 
