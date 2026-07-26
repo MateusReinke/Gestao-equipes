@@ -19,7 +19,15 @@ export type ColaboradorExistente = {
   sobreAviso: boolean;
   ativo: boolean;
   equipe: { id: number; nome: string };
+  dataAdmissao?: string | null;
+  dataDesligamento?: string | null;
+  dataNascimento?: string | null;
+  matricula?: string | null;
+  cpf?: string | null;
 };
+
+/// Datas vêm do backend em ISO com fuso; o input type=date quer só a data.
+const paraInput = (valor?: string | null) => (valor ? valor.slice(0, 10) : '');
 
 /**
  * Serve para cadastrar e para editar.
@@ -63,6 +71,13 @@ export function CollaboratorForm({
       fazPlantao: formData.get('fazPlantao') === 'on',
       sobreAviso: formData.get('sobreAviso') === 'on',
       ativo: formData.get('ativo') !== 'false',
+      // Campo de data vazio precisa virar null, não string vazia: o backend
+      // interpretaria '' como data inválida.
+      dataAdmissao: String(formData.get('dataAdmissao') || '') || null,
+      dataDesligamento: String(formData.get('dataDesligamento') || '') || null,
+      dataNascimento: String(formData.get('dataNascimento') || '') || null,
+      matricula: String(formData.get('matricula') || '') || null,
+      cpf: String(formData.get('cpf') || '') || null,
     };
 
     const form = event.currentTarget;
@@ -163,6 +178,56 @@ export function CollaboratorForm({
               <option value="remoto">Remoto</option>
             </Select>
           </Field>
+
+          <div className="sm:col-span-2 lg:col-span-3">
+            <p className="eyebrow mb-3 border-t border-line pt-4">Cadastro funcional</p>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field
+                label="Data de admissão"
+                htmlFor={id('dataAdmissao')}
+                hint="Base do cálculo de férias — sem ela não há ciclo"
+              >
+                <Input
+                  id={id('dataAdmissao')}
+                  name="dataAdmissao"
+                  type="date"
+                  defaultValue={paraInput(colaborador?.dataAdmissao)}
+                />
+              </Field>
+
+              <Field label="Data de desligamento" htmlFor={id('dataDesligamento')} hint="Deixe vazio se está na ativa">
+                <Input
+                  id={id('dataDesligamento')}
+                  name="dataDesligamento"
+                  type="date"
+                  defaultValue={paraInput(colaborador?.dataDesligamento)}
+                />
+              </Field>
+
+              <Field label="Data de nascimento" htmlFor={id('dataNascimento')} hint="Opcional">
+                <Input
+                  id={id('dataNascimento')}
+                  name="dataNascimento"
+                  type="date"
+                  defaultValue={paraInput(colaborador?.dataNascimento)}
+                />
+              </Field>
+
+              <Field label="Matrícula" htmlFor={id('matricula')} hint="Opcional">
+                <Input id={id('matricula')} name="matricula" maxLength={40} defaultValue={colaborador?.matricula ?? ''} />
+              </Field>
+
+              <Field label="CPF" htmlFor={id('cpf')} hint="Opcional — os dígitos são conferidos">
+                <Input
+                  id={id('cpf')}
+                  name="cpf"
+                  inputMode="numeric"
+                  placeholder="000.000.000-00"
+                  defaultValue={colaborador?.cpf ?? ''}
+                />
+              </Field>
+            </div>
+          </div>
 
           <fieldset className="flex flex-col justify-end gap-2 sm:col-span-2 lg:col-span-2">
             <legend className="field-label">Disponibilidade para escala</legend>

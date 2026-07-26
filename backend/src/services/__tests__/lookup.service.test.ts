@@ -287,3 +287,43 @@ describe('resposta real da BrasilAPI', () => {
     expect(resultado.razaoSocial).toBe('MAV EMPLACAMENTO LTDA');
   });
 });
+
+/* --------------------------------------------------------------- CPF */
+
+import { isValidCpf, formatCpf } from '../../utils/cpf';
+
+describe('isValidCpf', () => {
+  it('aceita CPF válido com e sem máscara', () => {
+    expect(isValidCpf('529.982.247-25')).toBe(true);
+    expect(isValidCpf('52998224725')).toBe(true);
+  });
+
+  it('rejeita dígito verificador errado', () => {
+    expect(isValidCpf('52998224726')).toBe(false);
+  });
+
+  it('rejeita tamanho errado', () => {
+    expect(isValidCpf('5299822472')).toBe(false);
+    expect(isValidCpf('529982247250')).toBe(false);
+  });
+
+  it('rejeita sequências repetidas, que passam no cálculo mas não são CPFs reais', () => {
+    expect(isValidCpf('00000000000')).toBe(false);
+    expect(isValidCpf('11111111111')).toBe(false);
+  });
+
+  it('trata o caso em que o resto do cálculo é 10 (dígito vira zero)', () => {
+    expect(isValidCpf('12345678909')).toBe(true);
+  });
+});
+
+describe('formatCpf', () => {
+  it('aplica a máscara', () => {
+    expect(formatCpf('52998224725')).toBe('529.982.247-25');
+  });
+
+  it('devolve nulo para vazio e o valor cru quando não tem 11 dígitos', () => {
+    expect(formatCpf(null)).toBeNull();
+    expect(formatCpf('123')).toBe('123');
+  });
+});

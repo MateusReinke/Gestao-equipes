@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3,
   Building2,
+  CalendarCheck,
   CalendarClock,
   CalendarDays,
   ChevronDown,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 import { PERMISSIONS, can, type PermissionCode, type SessionTenant, type SessionUser } from '@/lib/session-types';
 import { Badge, Button, cx } from './ui';
+import { NotificationBell } from './notification-bell';
 
 type NavItem = {
   href: string;
@@ -46,6 +48,7 @@ const NAV: NavItem[] = [
   { href: '/colaboradores', label: 'Colaboradores', icon: UserSquare2, permissoes: [PERMISSIONS.COLLABORATOR_VIEW], grupo: 'Cadastros' },
 
   { href: '/rh', label: 'Férias e ausências', icon: ClipboardList, permissoes: [PERMISSIONS.HR_VACATION_VIEW, PERMISSIONS.HR_ABSENCE_VIEW], grupo: 'Pessoas' },
+  { href: '/rh/ferias', label: 'Controle de férias', icon: CalendarCheck, permissoes: [PERMISSIONS.HR_VACATION_VIEW], grupo: 'Pessoas' },
 
   { href: '/relatorios', label: 'Relatórios', icon: BarChart3, permissoes: [PERMISSIONS.REPORT_VIEW], grupo: 'Administração' },
 
@@ -206,15 +209,18 @@ export function AppShell({
       {/* Barra superior — só em telas pequenas */}
       <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 py-2.5 backdrop-blur lg:hidden">
         {brand}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setMenuAberto((aberto) => !aberto)}
-          aria-label={menuAberto ? 'Fechar menu' : 'Abrir menu'}
-          aria-expanded={menuAberto}
-        >
-          {menuAberto ? <X size={18} /> : <Menu size={18} />}
-        </Button>
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setMenuAberto((aberto) => !aberto)}
+            aria-label={menuAberto ? 'Fechar menu' : 'Abrir menu'}
+            aria-expanded={menuAberto}
+          >
+            {menuAberto ? <X size={18} /> : <Menu size={18} />}
+          </Button>
+        </div>
       </header>
 
       {/* Menu mobile */}
@@ -241,6 +247,9 @@ export function AppShell({
       </aside>
 
       <main className="min-w-0 flex-1">
+        <div className="sticky top-0 z-20 hidden justify-end border-b border-line bg-bg/80 px-8 py-2 backdrop-blur lg:flex">
+          <NotificationBell />
+        </div>
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</div>
       </main>
     </div>

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidCpf } from '../utils/cpf';
 import { JwtPayload } from '../types/auth';
 import { collaboratorRepository } from '../repositories/collaborator.repository';
 import { teamRepository } from '../repositories/team.repository';
@@ -18,9 +19,32 @@ export const collaboratorSchema = z.object({
   fazPlantao: z.coerce.boolean().default(false),
   sobreAviso: z.coerce.boolean().default(false),
   ativo: z.coerce.boolean().default(true),
-});
 
-export const collaboratorUpdateSchema = collaboratorSchema.partial();
+  /// Cadastro funcional. A admissão é opcional no schema porque cadastros
+  /// antigos não a têm — mas sem ela não há ciclo de férias a calcular, e a
+  /// tela cobra o preenchimento para contratos CLT e de estágio.
+  dataAdmissao: z.coerce.date().nullable().optional(),
+  dataDesligamento: z.coerce.date().nullable().optional(),
+  dataNascimento: z.coerce.date().nullable().optional(),
+  matricula: z.string().trim().max(40).nullable().optional(),
+  cpf: z
+    .string()
+    .trim()
+    .transform((valor) => valor.replace(/\D/g, ''))
+    .refine((valor) => valor === '' || isValidCpf(valor), 'CPF inválido')
+    .transform((valor) => valor || null)
+    .nullable()
+    .optional(),
+})
+  .refine(
+    (dados) =>
+      !dados.dataDesligamento || !dados.dataAdmissao || dados.dataDesligamento >= dados.dataAdmissao,
+    { message: 'O desligamento não pode ser anterior à admissão', path: ['dataDesligamento'] }
+  );
+
+/// `.partial()` não existe em ZodEffects (o schema tem `.refine`), então a
+/// versão de atualização é montada a partir do objeto interno.
+export const collaboratorUpdateSchema = collaboratorSchema.innerType().partial();
 
 export type CollaboratorInput = z.infer<typeof collaboratorSchema>;
 export type CollaboratorUpdateInput = z.infer<typeof collaboratorUpdateSchema>;

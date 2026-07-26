@@ -115,6 +115,36 @@ O layout não guarda dados: guarda a **declaração** do que mostrar. Os número
 
 Salvar **publica uma versão nova**; a anterior continua no histórico. Restaurar também não apaga nada: republica o layout escolhido como a próxima versão, mantendo a linha do tempo íntegra e auditável.
 
+## Controle de férias (CLT)
+
+O que "vence" não são as férias — é o **período concessivo**. Cada ciclo tem duas janelas de 12 meses:
+
+- **Aquisitivo** — 12 meses a partir da admissão. Ao fechar, o direito está adquirido (Art. 130).
+- **Concessivo** — os 12 meses *seguintes*. É o prazo que a empresa tem para conceder (Art. 134). Estourar obriga a pagar o período em dobro (Art. 137).
+
+**Os ciclos não são armazenados.** Derivam da data de admissão e são calculados na leitura — guardá-los exigiria manter sincronizado algo já determinístico, e uma falta lançada com atraso ou uma admissão corrigida deixariam o saldo errado em silêncio. Só o que não é derivável ganha tabela: o ajuste manual, que exige motivo e vai para a auditoria.
+
+| Regra | Como se aplica |
+| --- | --- |
+| **Faltas injustificadas** (Art. 130) | Até 5 mantêm 30 dias; 6–14 caem para 24; 15–23 para 18; 24–32 para 12; acima disso o direito é perdido. A conta usa as ausências do tipo `falta` já aprovadas — nenhum lançamento novo. |
+| **Abono pecuniário** (Art. 143) | Limitado a um terço do direito. |
+| **Fracionamento** (Art. 134 §1) | Até 3 períodos, um com no mínimo 14 dias corridos e os demais com pelo menos 5. |
+| **Início véspera de repouso** (Art. 134 §3) | Avisa, não bloqueia. Sem cadastro de feriados só dá para conferir o repouso semanal, e bloquear com meia regra daria falsa sensação de conformidade. |
+
+Contrato importa: CLT e estágio geram direito; **PJ e terceirizado não** — o terceirizado tem férias com quem o contratou, não com você.
+
+### Alertas de prazo
+
+Quatro estados por ciclo: **direito adquirido** → **prazo próximo** (120 dias) → **crítico** (45) → **vencido**.
+
+O horizonte é generoso de propósito. Numa operação 24×7, avisar 30 dias antes é inútil: não dá tempo de achar cobertura para um mês inteiro de plantão nem de respeitar o aviso prévio de 30 dias (Art. 135). A 120 dias ainda cabe planejar.
+
+### Notificações
+
+Chegam no sino do cabeçalho, para os gestores das equipes envolvidas. São **idempotentes por construção**: a chave identifica o fato (colaborador + ciclo + severidade), não o instante. A varredura pode rodar quantas vezes for preciso — inclusive em duas instâncias ao mesmo tempo — sem duplicar aviso. Mudar de severidade gera chave nova, que é o comportamento desejado: o agravamento merece um aviso novo.
+
+Envio por e-mail ainda não existe; o modelo já está preparado para recebê-lo.
+
 ## Compartilhamento de recursos
 
 Um recurso (hoje, o dashboard) é compartilhado por **concessão de acesso**, em seis escopos:
@@ -201,6 +231,7 @@ Se todas as fontes falharem, o formulário continua utilizável — os campos s�
 | **Clientes** | Cadastro completo com CNPJ/CEP, SLA, escalation e responsável interno — criar, editar e remover. |
 | **Equipes / Colaboradores** | Estrutura da operação e disponibilidade para plantão/sobreaviso, com edição e remoção protegida por histórico. |
 | **Férias e ausências** | Solicitação e aprovação; períodos aprovados viram conflito na geração de turnos. |
+| **Controle de férias** | Ciclos aquisitivo/concessivo por pessoa, saldo, prazo e alertas de vencimento pela CLT. |
 | **Usuários e papéis** | Gestão de acesso, atribuição de papéis e criação de papéis customizados. |
 | **Relatórios** | Cinco relatórios operacionais com filtro de período e equipe, prévia e exportação em CSV. |
 | **Auditoria** | Quem fez, o quê, quando, de onde — com estado antes/depois. |
@@ -230,7 +261,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 cd backend && npm test
 ```
 
-157 testes cobrindo:
+214 testes cobrindo:
 
 - **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
 - **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
@@ -243,3 +274,6 @@ cd backend && npm test
 - **Segurança:** cabeçalhos aplicados e teto de requisições anunciado.
 - **Consulta de CNPJ/CEP:** dígitos verificadores, campos que chegam como número, logradouro partido em tipo + nome, telefone só com dígitos, fallback por tempo esgotado / limite de consultas / resposta vazia, 404 tratado como definitivo e o payload real de produção mapeado campo a campo.
 - **Exclusão protegida:** equipe e colaborador com histórico recusados com o motivo detalhado, e apagados quando realmente não deixam órfão.
+- **Férias pela CLT:** montagem dos ciclos com admissão em fim de mês e em 29 de fevereiro, tabela de faltas nas bordas exatas, abono de um terço, fracionamento válido e inválido, saldo que nunca fica negativo, e classificação de férias antigas pelo período concessivo.
+- **Alertas de prazo:** transição entre os quatro estados nos dias exatos do horizonte, um alerta por ciclo (o mais grave), chave de idempotência estável entre execuções e nova quando a severidade muda.
+- **Validação de CPF:** dígitos verificadores, máscara, sequências repetidas e o caso em que o resto do cálculo é 10.
