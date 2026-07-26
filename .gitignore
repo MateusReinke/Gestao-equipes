@@ -6,3 +6,11 @@ dist
 coverage
 prisma/dev.db
 *.tsbuildinfo
+
+# O Prisma recria este package.json na raiz sempre que `prisma generate` roda
+# a partir de backend/ com o schema em ../prisma. É artefato de autoinstall:
+# o projeto não tem workspace na raiz — backend/ e frontend/ têm os seus.
+# Deixá-lo versionado sequestra a resolução de módulos e faz o client ser
+# gerado no lugar errado.
+/package.json
+/package-lock.json
