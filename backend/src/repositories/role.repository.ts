@@ -15,6 +15,11 @@ export const roleRepository = {
       include: { permissoes: { include: { permission: true } } },
     });
   },
+  /// Papel utilizável por um tenant: o próprio ou um de sistema.
+  /// Evita que um id de papel customizado de outra empresa seja aceito.
+  findAvailableById(tenantId: number, id: number) {
+    return prisma.role.findFirst({ where: { id, OR: [{ tenantId: null }, { tenantId }] } });
+  },
   findByCodigo(tenantId: number | null, codigo: string) {
     return prisma.role.findFirst({ where: { tenantId, codigo } });
   },

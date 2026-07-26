@@ -228,6 +228,66 @@ export async function seedDemoData(prisma: PrismaClient, options: SeedOptions) {
     ],
   });
 
+  // ---- Dashboard de demonstração, compartilhado com toda a empresa ----
+  // Existe para a plataforma não abrir vazia: mostra de cara o que um painel
+  // montado consegue fazer, e serve de ponto de partida para o usuário copiar.
+  const painel = await prisma.dashboard.create({
+    data: {
+      tenantId,
+      nome: 'Operação NOC — visão do dia',
+      descricao: 'Cobertura atual, o que vem a seguir e o que precisa de decisão.',
+      ownerUserId: gestor.id,
+      visibilidade: 'compartilhado',
+    },
+  });
+
+  const versaoInicial = await prisma.dashboardVersion.create({
+    data: {
+      dashboardId: painel.id,
+      versao: 1,
+      nota: 'Versão inicial',
+      criadoPorId: gestor.id,
+      layout: {
+        widgets: [
+          { id: 'w-agora', tipo: 'metrica', titulo: 'Em turno agora', largura: 1, opcoes: { metrica: 'em_turno_agora' } },
+          { id: 'w-trocas', tipo: 'metrica', titulo: 'Trocas pendentes', largura: 1, opcoes: { metrica: 'trocas_pendentes' } },
+          { id: 'w-7dias', tipo: 'metrica', titulo: 'Turnos em 7 dias', largura: 1, opcoes: { metrica: 'turnos_7_dias' } },
+          { id: 'w-ferias', tipo: 'metrica', titulo: 'Em férias hoje', largura: 1, opcoes: { metrica: 'ferias_hoje' } },
+          { id: 'w-cobertura', tipo: 'em_turno_agora', titulo: 'Quem está cobrindo', largura: 2, opcoes: { limite: 8 } },
+          { id: 'w-proximos', tipo: 'proximos_turnos', titulo: 'Próximos turnos', largura: 2, opcoes: { limite: 8 } },
+          { id: 'w-semana', tipo: 'cobertura_semana', titulo: 'Cobertura da semana', largura: 2, opcoes: { dias: 7 } },
+          { id: 'w-carga', tipo: 'carga_por_colaborador', titulo: 'Carga por colaborador', largura: 2, opcoes: { dias: 30 } },
+          {
+            id: 'w-nota',
+            tipo: 'nota',
+            titulo: 'Procedimento de escalation',
+            largura: 4,
+            opcoes: {
+              texto:
+                'Sev1: acionar o plantonista da vez e abrir ponte em até 5 min.\nSev2: registrar no ticket e escalar ao líder no início do próximo turno.\nSem resposta do plantonista em 10 min: acionar o gestor de plantão.',
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  await prisma.dashboard.update({ where: { id: painel.id }, data: { versaoAtualId: versaoInicial.id } });
+
+  // Compartilhado com a empresa em leitura: todo mundo abre, só o dono edita.
+  await prisma.shareGrant.create({
+    data: {
+      tenantId,
+      recursoTipo: 'dashboard',
+      recursoId: painel.id,
+      escopo: 'tenant',
+      acesso: 'leitura',
+      criadoPorId: gestor.id,
+    },
+  });
+
+  await prisma.dashboardFavorite.create({ data: { dashboardId: painel.id, userId: gestor.id } });
+
   if (!options.criarSegundoTenant) return { tenantId };
 
   // ---- Segundo tenant, só para demonstrar isolamento em desenvolvimento ----

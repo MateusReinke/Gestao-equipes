@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ClipboardList,
   LayoutDashboard,
+  LayoutPanelTop,
   LogOut,
   Menu,
   Repeat2,
@@ -34,6 +35,7 @@ type NavItem = {
 /// das permissões efetivas — em vez de mostrar e bloquear no clique.
 const NAV: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard, permissoes: [PERMISSIONS.DASHBOARD_VIEW], grupo: 'Operação' },
+  { href: '/dashboards', label: 'Meus painéis', icon: LayoutPanelTop, permissoes: [PERMISSIONS.DASHBOARD_VIEW], grupo: 'Operação' },
   { href: '/turnos', label: 'Turnos', icon: CalendarClock, permissoes: [PERMISSIONS.SHIFT_VIEW], grupo: 'Operação' },
   { href: '/trocas', label: 'Trocas', icon: Repeat2, permissoes: [PERMISSIONS.SHIFT_VIEW], grupo: 'Operação' },
   { href: '/escalas', label: 'Escalas', icon: CalendarDays, permissoes: [PERMISSIONS.SCHEDULE_VIEW], grupo: 'Operação' },

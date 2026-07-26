@@ -8,6 +8,23 @@ export const teamRepository = {
   findManagerTeamIds(userId: number, tenantId: number) {
     return prisma.managerTeam.findMany({ where: { gestorId: userId, tenantId }, select: { equipeId: true } });
   },
+  /// Equipes às quais o usuário pertence de fato: as que ele gerencia e a do
+  /// colaborador vinculado ao seu login. É o alcance de um compartilhamento
+  /// com escopo "equipe" — diferente de `getVisibleTeamIds`, que responde
+  /// "o que ele pode enxergar" e se abre por completo para quem administra.
+  async findUserTeamIds(userId: number, tenantId: number): Promise<number[]> {
+    const [gerenciadas, membership] = await Promise.all([
+      prisma.managerTeam.findMany({ where: { gestorId: userId, tenantId }, select: { equipeId: true } }),
+      prisma.tenantMembership.findUnique({
+        where: { userId_tenantId: { userId, tenantId } },
+        select: { colaborador: { select: { equipeId: true } } },
+      }),
+    ]);
+
+    const ids = new Set(gerenciadas.map((item) => item.equipeId));
+    if (membership?.colaborador?.equipeId != null) ids.add(membership.colaborador.equipeId);
+    return [...ids];
+  },
   findByIds(tenantId: number, teamIds: number[]) {
     return prisma.team.findMany({
       where: { tenantId, id: { in: teamIds } },

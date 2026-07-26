@@ -12,6 +12,8 @@ vi.mock('../../config/prisma', () => ({
     shiftSwap: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
     tenantMembership: { findMany: vi.fn(), findUnique: vi.fn() },
     managerTeam: { findMany: vi.fn() },
+    shareGrant: { findMany: vi.fn(), findFirst: vi.fn(), deleteMany: vi.fn() },
+    dashboard: { findMany: vi.fn() },
   },
 }));
 
@@ -24,6 +26,8 @@ import { vacationRepository } from '../vacation.repository';
 import { absenceRepository } from '../absence.repository';
 import { shiftRepository } from '../shift.repository';
 import { swapRepository } from '../swap.repository';
+import { shareRepository } from '../share.repository';
+import { dashboardRepository } from '../dashboard.repository';
 
 const TENANT_ID = 42;
 
@@ -123,6 +127,39 @@ describe('repositórios sempre filtram por tenant_id', () => {
     await swapRepository.create(TENANT_ID, { motivo: 'teste' } as never);
     expect(prisma.shiftSwap.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ tenantId: TENANT_ID }) })
+    );
+  });
+
+  it('shareRepository.listForResource', async () => {
+    await shareRepository.listForResource(TENANT_ID, 'dashboard', 5);
+    expect(prisma.shareGrant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: TENANT_ID }) })
+    );
+  });
+
+  it('shareRepository.findById combina tenantId + id', async () => {
+    await shareRepository.findById(TENANT_ID, 9);
+    expect(prisma.shareGrant.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: TENANT_ID, id: 9 }) })
+    );
+  });
+
+  it('shareRepository.remove exige tenantId', async () => {
+    await shareRepository.remove(TENANT_ID, 9);
+    expect(prisma.shareGrant.deleteMany).toHaveBeenCalledWith({ where: { id: 9, tenantId: TENANT_ID } });
+  });
+
+  it('shareRepository.findExistingTarget não confunde destinatários de tenants diferentes', async () => {
+    await shareRepository.findExistingTarget(TENANT_ID, 'dashboard', 5, { escopo: 'usuario', usuarioId: 3 });
+    expect(prisma.shareGrant.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: TENANT_ID, usuarioId: 3 }) })
+    );
+  });
+
+  it('dashboardRepository.findOwnedBy filtra por tenant e por dono', async () => {
+    await dashboardRepository.findOwnedBy(TENANT_ID, 4);
+    expect(prisma.dashboard.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: TENANT_ID, ownerUserId: 4 }) })
     );
   });
 });

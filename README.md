@@ -50,7 +50,7 @@ Um usuário é uma **identidade global** (e-mail único na plataforma) que pode 
 
 Autorização é por **permissão nomeada**, não por papel — as rotas usam `requirePermission('shift.approve_swap')`, e o papel é apenas um conjunto pré-montado de permissões.
 
-**Papéis padrão** (7, imutáveis): Administrador da Empresa, Gestor, Líder, Analista, Operador, Cliente e Visitante. Cada empresa pode criar **papéis próprios** com qualquer combinação das 36 permissões do catálogo.
+**Papéis padrão** (7, imutáveis): Administrador da Empresa, Gestor, Líder, Analista, Operador, Cliente e Visitante. Cada empresa pode criar **papéis próprios** com qualquer combinação das 41 permissões do catálogo.
 
 Além do papel, existem **overrides individuais** por usuário (`grant`/`deny`), que sempre vencem sobre o papel:
 
@@ -87,6 +87,51 @@ Quando duas pessoas combinam trocar um dia específico:
 
 O turno resultante fica com status `trocado` e guarda quem estava escalado originalmente — o calendário mostra "era Ana", e nada do histórico se perde. Regerar a escala nunca sobrescreve turnos que vieram de troca aprovada.
 
+## Dashboards montáveis
+
+Além do painel operacional fixo, cada pessoa monta **seus próprios dashboards** escolhendo widgets de um catálogo:
+
+| Widget | O que mostra |
+| --- | --- |
+| **Contador** | Um número em destaque — clientes, equipes, colaboradores, em turno agora, férias hoje, trocas pendentes, escalas ativas ou turnos nos próximos 7 dias. |
+| **Em turno agora** | Quem está cobrindo neste instante, já descontando férias e ausências aprovadas. |
+| **Próximos turnos** | O que vem a seguir no calendário. |
+| **Trocas pendentes** | Pedidos aguardando aceite ou aprovação. |
+| **Férias e ausências** | Quem fica indisponível na janela escolhida. |
+| **Cobertura por dia** | Quantos turnos há em cada dia do período. |
+| **Carga por colaborador** | Turnos e horas acumuladas por pessoa (turno que vira a meia-noite conta certo). |
+| **Clientes e SLA** | Contato de escalation e SLA contratado. |
+| **Nota** | Texto livre — procedimento de escalation, aviso do turno, link de runbook. |
+
+Cada widget aceita título, largura (1 a 4 colunas), filtro de equipe e, conforme o tipo, período em dias e quantidade de itens.
+
+O layout não guarda dados: guarda a **declaração** do que mostrar. Os números são resolvidos na hora da leitura — por isso uma versão antiga restaurada continua exibindo a operação de hoje, não a de quando foi salva.
+
+### Versionamento
+
+Salvar **publica uma versão nova**; a anterior continua no histórico. Restaurar também não apaga nada: republica o layout escolhido como a próxima versão, mantendo a linha do tempo íntegra e auditável.
+
+## Compartilhamento de recursos
+
+Um recurso (hoje, o dashboard) é compartilhado por **concessão de acesso**, em seis escopos:
+
+| Escopo | Alcança |
+| --- | --- |
+| **Pessoa** | Um usuário específico da empresa. |
+| **Equipe** | Quem gerencia a equipe e quem é membro dela. |
+| **Papel** | Todos que exercem aquele papel na empresa. |
+| **Empresa** | Todos os membros do tenant. |
+| **Link público** | Quem tiver o link — sem login, sempre somente leitura. |
+| **Plataforma** | Todas as empresas. Exclusivo do Administrador Global. |
+
+Cada concessão tem um nível: **leitura**, **edição** ou **gestão** (quem pode compartilhar e remover). Quando duas concessões alcançam a mesma pessoa — a da equipe dela e uma nominal, por exemplo — vale a mais permissiva. O dono do recurso sempre tem gestão.
+
+Compartilhar dá acesso ao **painel**, não aos dados: os widgets continuam respeitando o recorte de equipes de quem está olhando. Duas pessoas podem abrir o mesmo dashboard e ver números diferentes, e isso é intencional.
+
+### Wallboard (`/d/<token>`)
+
+O escopo *link público* gera uma URL sem sessão, somente leitura, com atualização automática a cada minuto — feita para a TV do NOC. O token é o segredo; revogar a concessão derruba o link na hora. Cada link é independente: revogar um não afeta os outros.
+
 ## Integrações públicas
 
 Cadastro de clientes preenche automaticamente a partir de APIs gratuitas, com o backend fazendo a chamada (evita CORS e padroniza a resposta):
@@ -101,6 +146,7 @@ Se a consulta falhar, o formulário continua utilizável — os campos são apen
 | Módulo | O que faz |
 | --- | --- |
 | **Dashboard** | Quem está em turno agora, próximos turnos, trocas pendentes, férias e clientes. |
+| **Meus painéis** | Dashboards montáveis com widgets, versionamento, favoritos, compartilhamento e wallboard público. |
 | **Turnos** | Calendário semanal da operação, com status e rastreio de trocas. |
 | **Trocas** | Fluxo completo de solicitação → aceite → aprovação. |
 | **Escalas** | Regras de revezamento com faixas de horário e ordem da rotação. |
@@ -117,7 +163,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 ## Estrutura do repositório
 
 - `backend/` — `controllers/` (HTTP) → `services/` (regra de negócio) → `repositories/` (Prisma, sempre com `tenantId` explícito)
-- `frontend/` — `/login` e `/console` públicos ao seu escopo; demais rotas protegidas pelo grupo `(app)`, por `middleware.ts` e por guarda de permissão em cada página
+- `frontend/` — `/login`, `/console` e `/d/<token>` (wallboard) públicos ao seu escopo; demais rotas protegidas pelo grupo `(app)`, por `middleware.ts` e por guarda de permissão em cada página
 - `prisma/` — schema, migrations, `seed.ts` (idempotente) e `seed.dev.ts` (destrutivo, só local)
 - `docker/` — Dockerfiles e compose espelhado
 
@@ -127,10 +173,12 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 cd backend && npm test
 ```
 
-64 testes cobrindo:
+102 testes cobrindo:
 
 - **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
 - **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
 - **Isolamento:** todo repositório filtra por `tenant_id` — inclusive o caso de um `id` que existe em outro tenant (retorna "não encontrado", nunca o dado alheio).
 - **Gerador de turnos:** revezamento 12x36 com 2 e 3 pessoas, escala fixa 5x2, faixas sobrepostas, vigência de atribuições e alinhamento da rotação ao regerar períodos parciais.
+- **Compartilhamento:** resolução do acesso efetivo (posse, papel, equipe, tenant, plataforma), a mais permissiva vencendo independentemente da ordem, destinatário de outra empresa recusado, escopo de plataforma restrito ao Administrador Global, promoção em vez de duplicata e expiração de link público.
+- **Widgets:** filtro de equipe que não amplia o escopo do observador, cobertura por dia com dias vazios, carga com turno que vira a meia-noite, exclusão de quem está de férias e um widget que falha sem derrubar os vizinhos.
 - **Validação de CNPJ:** dígitos verificadores, máscara e sequências repetidas.

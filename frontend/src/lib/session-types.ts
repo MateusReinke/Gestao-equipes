@@ -14,6 +14,11 @@ export type SessionInfo = {
 /// Espelha `backend/src/types/permissions.ts`.
 export const PERMISSIONS = {
   DASHBOARD_VIEW: 'dashboard.view',
+  DASHBOARD_CREATE: 'dashboard.create',
+  DASHBOARD_EDIT: 'dashboard.edit',
+  DASHBOARD_DELETE: 'dashboard.delete',
+  DASHBOARD_SHARE: 'dashboard.share',
+  SHARE_MANAGE: 'share.manage',
   CLIENT_VIEW: 'client.view',
   CLIENT_CREATE: 'client.create',
   CLIENT_EDIT: 'client.edit',

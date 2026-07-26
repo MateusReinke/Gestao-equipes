@@ -5,7 +5,10 @@ const PUBLIC_PATHS = ['/login'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const isPublic = PUBLIC_PATHS.includes(pathname) || pathname.startsWith('/api/auth');
+  // `/d/<token>` é o wallboard público: o token do link já é a credencial,
+  // e exigir login ali derrubaria o caso de uso (TV do NOC, sem sessão).
+  const isPublic =
+    PUBLIC_PATHS.includes(pathname) || pathname.startsWith('/api/auth') || pathname.startsWith('/d/');
   const token = request.cookies.get(SESSION_COOKIE)?.value;
 
   if (!token && !isPublic) {

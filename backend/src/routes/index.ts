@@ -16,12 +16,15 @@ import { rbacController } from '../controllers/rbac.controller';
 import { auditController } from '../controllers/audit.controller';
 import { lookupController } from '../controllers/lookup.controller';
 import { tenantController } from '../controllers/tenant.controller';
+import { dashboardBuilderController } from '../controllers/dashboard-builder.controller';
 
 export const router = Router();
 
 // ---------- Público ----------
 router.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 router.post('/auth/login', asyncHandler(authController.login));
+// Wallboard: o token do link é o próprio segredo, então não passa por sessão.
+router.get('/public/dashboards/:token', asyncHandler(dashboardBuilderController.publicView));
 
 // ---------- Sessão ----------
 router.post('/auth/switch-tenant', auth({ requireGlobalAdmin: true, requireTenant: false }), asyncHandler(authController.switchTenant));
@@ -35,6 +38,27 @@ router.delete('/platform/tenants/:id', auth({ requireGlobalAdmin: true, requireT
 
 // ---------- Dashboard ----------
 router.get('/api/dashboard', auth(), requirePermission(P.DASHBOARD_VIEW), asyncHandler(dashboardController.show));
+
+// ---------- Dashboards personalizados ----------
+// A posse e o compartilhamento são checados no serviço; a permissão aqui é o
+// primeiro filtro (quem nem pode ver dashboard não chega ao serviço).
+router.get('/api/dashboards/catalogo', auth(), requirePermission(P.DASHBOARD_VIEW), dashboardBuilderController.catalog);
+router.get('/api/dashboards', auth(), requirePermission(P.DASHBOARD_VIEW), asyncHandler(dashboardBuilderController.list));
+router.post('/api/dashboards', auth(), requirePermission(P.DASHBOARD_CREATE), asyncHandler(dashboardBuilderController.create));
+router.get('/api/dashboards/:id', auth({ requireTenant: false }), requirePermission(P.DASHBOARD_VIEW), asyncHandler(dashboardBuilderController.show));
+router.patch('/api/dashboards/:id', auth(), requirePermission(P.DASHBOARD_EDIT), asyncHandler(dashboardBuilderController.update));
+router.put('/api/dashboards/:id/layout', auth(), requirePermission(P.DASHBOARD_EDIT), asyncHandler(dashboardBuilderController.saveLayout));
+router.delete('/api/dashboards/:id', auth(), requirePermission(P.DASHBOARD_DELETE), asyncHandler(dashboardBuilderController.remove));
+router.get('/api/dashboards/:id/versoes', auth(), requirePermission(P.DASHBOARD_VIEW), asyncHandler(dashboardBuilderController.versions));
+router.post('/api/dashboards/:id/versoes/:versionId/restaurar', auth(), requirePermission(P.DASHBOARD_EDIT), asyncHandler(dashboardBuilderController.restore));
+router.post('/api/dashboards/:id/favorito', auth(), requirePermission(P.DASHBOARD_VIEW), asyncHandler(dashboardBuilderController.favorite));
+router.delete('/api/dashboards/:id/favorito', auth(), requirePermission(P.DASHBOARD_VIEW), asyncHandler(dashboardBuilderController.favorite));
+
+// ---------- Compartilhamento de recursos ----------
+router.get('/api/dashboards/:id/compartilhamentos', auth(), requirePermission(P.DASHBOARD_SHARE), asyncHandler(dashboardBuilderController.listShares));
+router.post('/api/dashboards/:id/compartilhamentos', auth(), requirePermission(P.DASHBOARD_SHARE), asyncHandler(dashboardBuilderController.share));
+router.delete('/api/dashboards/:id/compartilhamentos/:shareId', auth(), requirePermission(P.DASHBOARD_SHARE), asyncHandler(dashboardBuilderController.revoke));
+router.get('/api/compartilhamentos', auth(), requirePermission(P.SHARE_MANAGE), asyncHandler(dashboardBuilderController.tenantShares));
 
 // ---------- Clientes ----------
 router.get('/api/clientes', auth(), requirePermission(P.CLIENT_VIEW), asyncHandler(clientController.list));

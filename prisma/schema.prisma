@@ -84,6 +84,35 @@ enum PermissionEffect {
   deny
 }
 
+/// Tipos de recurso que podem ser compartilhados.
+enum ShareResourceType {
+  dashboard
+  escala
+  relatorio
+}
+
+/// Para quem o recurso foi compartilhado.
+enum ShareScope {
+  usuario
+  equipe
+  papel
+  tenant
+  link_publico
+  plataforma
+}
+
+/// Quanto o destinatário pode fazer com o recurso compartilhado.
+enum ShareAccess {
+  leitura
+  edicao
+  gestao
+}
+
+enum DashboardVisibility {
+  privado
+  compartilhado
+}
+
 enum AuditAction {
   create
   update
@@ -119,6 +148,8 @@ model Tenant {
   ferias            Vacation[]
   ausencias         Absence[]
   auditoria         AuditLog[]
+  compartilhamentos ShareGrant[]
+  dashboards        Dashboard[]
 
   @@map("tenants")
 }
@@ -136,14 +167,19 @@ model User {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  memberships       TenantMembership[]
-  gestorEquipes     ManagerTeam[]
-  overrides         UserPermissionOverride[]
-  auditoria         AuditLog[]
-  feriasSolicitadas Vacation[]              @relation("VacationRequester")
-  feriasRespondidas Vacation[]              @relation("VacationApprover")
-  ausenciasRespondidas Absence[]            @relation("AbsenceApprover")
-  trocasRespondidas ShiftSwap[]             @relation("SwapResponder")
+  memberships                TenantMembership[]
+  gestorEquipes              ManagerTeam[]
+  overrides                  UserPermissionOverride[]
+  auditoria                  AuditLog[]
+  feriasSolicitadas          Vacation[]               @relation("VacationRequester")
+  feriasRespondidas          Vacation[]               @relation("VacationApprover")
+  ausenciasRespondidas       Absence[]                @relation("AbsenceApprover")
+  trocasRespondidas          ShiftSwap[]              @relation("SwapResponder")
+  compartilhamentosRecebidos ShareGrant[]             @relation("ShareTargetUser")
+  compartilhamentosCriados   ShareGrant[]             @relation("ShareCreator")
+  dashboards                 Dashboard[]              @relation("DashboardOwner")
+  dashboardVersoes           DashboardVersion[]       @relation("DashboardVersionAuthor")
+  dashboardFavoritos         DashboardFavorite[]
 
   @@map("usuarios")
 }
@@ -175,9 +211,10 @@ model Role {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  tenant      Tenant?            @relation(fields: [tenantId], references: [id])
-  permissoes  RolePermission[]
-  memberships TenantMembership[]
+  tenant            Tenant?            @relation(fields: [tenantId], references: [id])
+  permissoes        RolePermission[]
+  memberships       TenantMembership[]
+  compartilhamentos ShareGrant[]
 
   @@unique([tenantId, codigo])
   @@index([tenantId])
@@ -280,11 +317,12 @@ model Team {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  tenant        Tenant         @relation(fields: [tenantId], references: [id])
-  cliente       Client?        @relation(fields: [clienteId], references: [id])
-  colaboradores Collaborator[]
-  gestores      ManagerTeam[]
-  turnos        Shift[]
+  tenant            Tenant         @relation(fields: [tenantId], references: [id])
+  cliente           Client?        @relation(fields: [clienteId], references: [id])
+  colaboradores     Collaborator[]
+  gestores          ManagerTeam[]
+  turnos            Shift[]
+  compartilhamentos ShareGrant[]
 
   @@index([tenantId])
   @@map("equipes")
@@ -430,20 +468,20 @@ model Shift {
 /// tipo=troca: ambos trocam de dia (turno origem <-> turno destino).
 /// tipo=cobertura: o destinatário assume o turno de origem, sem contrapartida.
 model ShiftSwap {
-  id                Int        @id @default(autoincrement())
-  tenantId          Int        @map("tenant_id")
-  tipo              SwapType   @default(troca)
-  solicitanteId     Int        @map("solicitante_id")
-  destinatarioId    Int        @map("destinatario_id")
-  turnoOrigemId     Int        @map("turno_origem_id")
-  turnoDestinoId    Int?       @map("turno_destino_id")
-  motivo            String
-  status            SwapStatus @default(pendente)
-  respondidoPorId   Int?       @map("respondido_por_id")
-  respondidoEm      DateTime?  @map("respondido_em")
-  observacaoResposta String?   @map("observacao_resposta")
-  createdAt         DateTime   @default(now()) @map("created_at")
-  updatedAt         DateTime   @updatedAt @map("updated_at")
+  id                 Int        @id @default(autoincrement())
+  tenantId           Int        @map("tenant_id")
+  tipo               SwapType   @default(troca)
+  solicitanteId      Int        @map("solicitante_id")
+  destinatarioId     Int        @map("destinatario_id")
+  turnoOrigemId      Int        @map("turno_origem_id")
+  turnoDestinoId     Int?       @map("turno_destino_id")
+  motivo             String
+  status             SwapStatus @default(pendente)
+  respondidoPorId    Int?       @map("respondido_por_id")
+  respondidoEm       DateTime?  @map("respondido_em")
+  observacaoResposta String?    @map("observacao_resposta")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
 
   tenant        Tenant       @relation(fields: [tenantId], references: [id])
   solicitante   Collaborator @relation("SwapRequester", fields: [solicitanteId], references: [id])
@@ -540,4 +578,95 @@ model AuditLog {
   @@index([tenantId, createdAt])
   @@index([entidade, entidadeId])
   @@map("auditoria")
+}
+
+/// Concessão de acesso a um recurso para um destinatário.
+/// O destinatário varia conforme o escopo: um usuário, uma equipe inteira,
+/// todos que exercem um papel, todo o tenant, quem tiver o link público ou
+/// (exclusivo do Administrador Global) todas as empresas da plataforma.
+/// Só uma das colunas de destino é preenchida por linha — as demais ficam nulas.
+model ShareGrant {
+  id          Int               @id @default(autoincrement())
+  tenantId    Int               @map("tenant_id")
+  recursoTipo ShareResourceType @map("recurso_tipo")
+  recursoId   Int               @map("recurso_id")
+  escopo      ShareScope
+  usuarioId   Int?              @map("usuario_id")
+  equipeId    Int?              @map("equipe_id")
+  papelId     Int?              @map("papel_id")
+  token       String?           @unique
+  acesso      ShareAccess       @default(leitura)
+  expiraEm    DateTime?         @map("expira_em")
+  criadoPorId Int?              @map("criado_por_id")
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id])
+  usuario   User?  @relation("ShareTargetUser", fields: [usuarioId], references: [id], onDelete: Cascade)
+  equipe    Team?  @relation(fields: [equipeId], references: [id], onDelete: Cascade)
+  papel     Role?  @relation(fields: [papelId], references: [id], onDelete: Cascade)
+  criadoPor User?  @relation("ShareCreator", fields: [criadoPorId], references: [id])
+
+  @@index([tenantId, recursoTipo, recursoId])
+  @@index([usuarioId])
+  @@index([equipeId])
+  @@index([papelId])
+  @@map("compartilhamentos")
+}
+
+/// Dashboard montado pelo usuário. O conteúdo (lista de widgets) não fica aqui:
+/// mora em DashboardVersion, e `versaoAtualId` aponta para a versão publicada.
+/// Editar cria uma nova versão — o histórico nunca é sobrescrito.
+model Dashboard {
+  id            Int                 @id @default(autoincrement())
+  tenantId      Int                 @map("tenant_id")
+  nome          String
+  descricao     String?
+  ownerUserId   Int                 @map("owner_user_id")
+  visibilidade  DashboardVisibility @default(privado)
+  versaoAtualId Int?                @unique @map("versao_atual_id")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id])
+  owner       User                @relation("DashboardOwner", fields: [ownerUserId], references: [id])
+  versaoAtual DashboardVersion?   @relation("DashboardCurrentVersion", fields: [versaoAtualId], references: [id])
+  versoes     DashboardVersion[]  @relation("DashboardVersions")
+  favoritos   DashboardFavorite[]
+
+  @@index([tenantId])
+  @@index([tenantId, ownerUserId])
+  @@map("dashboards")
+}
+
+/// Snapshot imutável do layout (array de widgets) em um ponto do tempo.
+model DashboardVersion {
+  id          Int      @id @default(autoincrement())
+  dashboardId Int      @map("dashboard_id")
+  versao      Int
+  layout      Json
+  nota        String?
+  criadoPorId Int?     @map("criado_por_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  dashboard Dashboard  @relation("DashboardVersions", fields: [dashboardId], references: [id], onDelete: Cascade)
+  criadoPor User?      @relation("DashboardVersionAuthor", fields: [criadoPorId], references: [id])
+  atualDe   Dashboard? @relation("DashboardCurrentVersion")
+
+  @@unique([dashboardId, versao])
+  @@index([dashboardId])
+  @@map("dashboard_versoes")
+}
+
+model DashboardFavorite {
+  id          Int      @id @default(autoincrement())
+  dashboardId Int      @map("dashboard_id")
+  userId      Int      @map("user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  dashboard Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([dashboardId, userId])
+  @@index([userId])
+  @@map("dashboard_favoritos")
 }

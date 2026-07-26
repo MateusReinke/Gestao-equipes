@@ -3,6 +3,12 @@
 /// autocomplete/checagem de tipo ao usar `requirePermission(...)` nas rotas.
 export const PERMISSIONS = {
   DASHBOARD_VIEW: 'dashboard.view',
+  DASHBOARD_CREATE: 'dashboard.create',
+  DASHBOARD_EDIT: 'dashboard.edit',
+  DASHBOARD_DELETE: 'dashboard.delete',
+  DASHBOARD_SHARE: 'dashboard.share',
+
+  SHARE_MANAGE: 'share.manage',
 
   CLIENT_VIEW: 'client.view',
   CLIENT_CREATE: 'client.create',
