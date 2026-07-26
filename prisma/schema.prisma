@@ -113,6 +113,22 @@ enum DashboardVisibility {
   compartilhado
 }
 
+enum NotificationSeverity {
+  info
+  aviso
+  critico
+}
+
+enum NotificationType {
+  ferias_direito_adquirido
+  ferias_prazo_proximo
+  ferias_prazo_critico
+  ferias_vencida
+  ferias_pendente_aprovacao
+  ausencia_pendente_aprovacao
+  troca_pendente_aprovacao
+}
+
 enum AuditAction {
   create
   update
@@ -150,6 +166,8 @@ model Tenant {
   auditoria         AuditLog[]
   compartilhamentos ShareGrant[]
   dashboards        Dashboard[]
+  ajustesFerias     VacationAdjustment[]
+  notificacoes      Notification[]
 
   @@map("tenants")
 }
@@ -180,6 +198,8 @@ model User {
   dashboards                 Dashboard[]              @relation("DashboardOwner")
   dashboardVersoes           DashboardVersion[]       @relation("DashboardVersionAuthor")
   dashboardFavoritos         DashboardFavorite[]
+  notificacoes               Notification[]           @relation("NotificationTarget")
+  ajustesFeriasRegistrados   VacationAdjustment[]     @relation("VacationAdjustmentAuthor")
 
   @@map("usuarios")
 }
@@ -341,21 +361,32 @@ model Collaborator {
   fazPlantao     Boolean      @default(false) @map("faz_plantao")
   sobreAviso     Boolean      @default(false) @map("sobre_aviso")
   ativo          Boolean      @default(true)
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  tenant              Tenant             @relation(fields: [tenantId], references: [id])
-  equipe              Team               @relation(fields: [equipeId], references: [id])
-  clientesResponsavel Client[]           @relation("ClientResponsible")
+  /// Cadastro funcional. `dataAdmissao` é opcional no banco porque os
+  /// cadastros anteriores a este módulo não a têm — mas sem ela não há como
+  /// calcular ciclo de férias, e a tela cobra o preenchimento.
+  dataAdmissao     DateTime? @map("data_admissao") @db.Date
+  dataDesligamento DateTime? @map("data_desligamento") @db.Date
+  dataNascimento   DateTime? @map("data_nascimento") @db.Date
+  matricula        String?
+  cpf              String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  equipe              Team                 @relation(fields: [equipeId], references: [id])
+  clientesResponsavel Client[]             @relation("ClientResponsible")
   memberships         TenantMembership[]
   escalas             ScaleAssignment[]
   plantoes            OnCall[]
   ferias              Vacation[]
   ausencias           Absence[]
-  turnos              Shift[]            @relation("ShiftOwner")
-  turnosOriginais     Shift[]            @relation("ShiftOriginalOwner")
-  trocasSolicitadas   ShiftSwap[]        @relation("SwapRequester")
-  trocasRecebidas     ShiftSwap[]        @relation("SwapTarget")
+  turnos              Shift[]              @relation("ShiftOwner")
+  turnosOriginais     Shift[]              @relation("ShiftOriginalOwner")
+  trocasSolicitadas   ShiftSwap[]          @relation("SwapRequester")
+  trocasRecebidas     ShiftSwap[]          @relation("SwapTarget")
+  ajustesFerias       VacationAdjustment[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -518,6 +549,11 @@ model Vacation {
   colaboradorId   Int            @map("colaborador_id")
   dataInicio      DateTime       @map("data_inicio") @db.Date
   dataFim         DateTime       @map("data_fim") @db.Date
+  /// Qual período aquisitivo este gozo consome. Nulo em registros anteriores
+  /// ao módulo de ciclos — a tela classifica pela data quando possível.
+  cicloNumero     Int?           @map("ciclo_numero")
+  /// Dias vendidos como abono pecuniário (Art. 143), até 1/3 do direito.
+  diasAbono       Int            @default(0) @map("dias_abono")
   status          VacationStatus @default(pendente)
   observacao      String?
   solicitadoPorId Int?           @map("solicitado_por_id")
@@ -676,4 +712,60 @@ model DashboardFavorite {
   @@unique([dashboardId, userId])
   @@index([userId])
   @@map("dashboard_favoritos")
+}
+
+/// Ajuste manual no direito a férias de um ciclo.
+///
+/// Os ciclos são derivados da data de admissão e não ficam armazenados. Esta
+/// tabela guarda só o que NÃO é derivável: acordo coletivo, correção de
+/// cadastro, quitação em dobro de um ciclo vencido. Todo ajuste exige motivo,
+/// porque mexe em direito trabalhista e alguém vai precisar explicar depois.
+model VacationAdjustment {
+  id              Int      @id @default(autoincrement())
+  tenantId        Int      @map("tenant_id")
+  colaboradorId   Int      @map("colaborador_id")
+  cicloNumero     Int      @map("ciclo_numero")
+  /// Positivo concede dias, negativo retira.
+  diasDelta       Int      @map("dias_delta")
+  motivo          String
+  registradoPorId Int?     @map("registrado_por_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  colaborador   Collaborator @relation(fields: [colaboradorId], references: [id], onDelete: Cascade)
+  registradoPor User?        @relation("VacationAdjustmentAuthor", fields: [registradoPorId], references: [id])
+
+  @@index([tenantId, colaboradorId])
+  @@map("ferias_ajustes")
+}
+
+/// Notificação dentro do app.
+///
+/// `chaveIdempotencia` é o que permite a varredura diária rodar quantas vezes
+/// for preciso sem duplicar aviso: identifica o fato notificado (por exemplo
+/// `ferias_prazo_critico:colab=12:ciclo=2`), não o instante do envio.
+model Notification {
+  id                Int                  @id @default(autoincrement())
+  tenantId          Int                  @map("tenant_id")
+  destinatarioId    Int                  @map("destinatario_id")
+  tipo              NotificationType
+  severidade        NotificationSeverity @default(info)
+  titulo            String
+  mensagem          String
+  /// Para onde a notificação leva ao ser clicada.
+  link              String?
+  entidade          String?
+  entidadeId        String?              @map("entidade_id")
+  chaveIdempotencia String               @map("chave_idempotencia")
+  lidaEm            DateTime?            @map("lida_em")
+  createdAt         DateTime             @default(now()) @map("created_at")
+
+  tenant       Tenant @relation(fields: [tenantId], references: [id])
+  destinatario User   @relation("NotificationTarget", fields: [destinatarioId], references: [id], onDelete: Cascade)
+
+  @@unique([destinatarioId, chaveIdempotencia])
+  /// Serve a consulta quente: as não lidas de quem está com a tela aberta.
+  @@index([destinatarioId, lidaEm, createdAt(sort: Desc)])
+  @@index([tenantId])
+  @@map("notificacoes")
 }

@@ -45,6 +45,8 @@ export const PERMISSIONS = {
   HR_VACATION_APPROVE: 'hr.vacation.approve',
   HR_ABSENCE_VIEW: 'hr.absence.view',
   HR_ABSENCE_MANAGE: 'hr.absence.manage',
+  HR_VACATION_ADJUST: 'hr.vacation.adjust',
+  HR_EMPLOYEE_MANAGE: 'hr.employee.manage',
   USER_VIEW: 'user.view',
   USER_INVITE: 'user.invite',
   USER_EDIT: 'user.edit',

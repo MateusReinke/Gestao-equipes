@@ -19,6 +19,7 @@ import { lookupController } from '../controllers/lookup.controller';
 import { tenantController } from '../controllers/tenant.controller';
 import { dashboardBuilderController } from '../controllers/dashboard-builder.controller';
 import { reportController } from '../controllers/report.controller';
+import { hrVacationController, notificationController } from '../controllers/hr-vacation.controller';
 
 export const router = Router();
 
@@ -114,6 +115,18 @@ router.patch('/api/ferias/:id', auth(), requirePermission(P.HR_VACATION_APPROVE)
 router.get('/api/ausencias', auth(), requirePermission(P.HR_ABSENCE_VIEW), asyncHandler(hrController.listAbsences));
 router.post('/api/ausencias', auth(), requirePermission(P.HR_ABSENCE_MANAGE), asyncHandler(hrController.createAbsence));
 router.patch('/api/ausencias/:id', auth(), requirePermission(P.HR_ABSENCE_MANAGE), asyncHandler(hrController.respondAbsence));
+
+// ---------- Saldo e prazos de férias (CLT) ----------
+router.get('/api/ferias/saldos', auth(), requirePermission(P.HR_VACATION_VIEW), asyncHandler(hrVacationController.saldos));
+router.get('/api/ferias/alertas', auth(), requirePermission(P.HR_VACATION_VIEW), asyncHandler(hrVacationController.alertas));
+router.post('/api/ferias/ajustes', auth(), requirePermission(P.HR_VACATION_ADJUST), asyncHandler(hrVacationController.ajustar));
+router.post('/api/ferias/varredura', auth(), requirePermission(P.HR_VACATION_APPROVE), asyncHandler(hrVacationController.varrer));
+
+// ---------- Notificações ----------
+// Cada um vê as próprias: o filtro é o usuário da sessão, não uma permissão.
+router.get('/api/notificacoes', auth(), asyncHandler(notificationController.list));
+router.post('/api/notificacoes/:id/lida', auth(), asyncHandler(notificationController.marcarLida));
+router.post('/api/notificacoes/lidas', auth(), asyncHandler(notificationController.marcarTodasLidas));
 
 // ---------- RBAC / administração ----------
 router.get('/api/permissoes', auth(), requirePermission(P.ROLE_MANAGE, P.USER_MANAGE_ROLES), asyncHandler(rbacController.listPermissions));
