@@ -4,16 +4,18 @@ import { env } from '../config/env';
 import { JwtPayload } from '../types/auth';
 
 type AuthOptions = {
-  /** Papéis aceitos dentro do tenant ativo. Administrador Global sempre passa. */
-  roles?: NonNullable<JwtPayload['role']>[];
   /** Exige um tenant ativo selecionado (padrão: true). Use false para rotas de plataforma. */
   requireTenant?: boolean;
   /** Exige que o usuário seja o Administrador Global. */
   requireGlobalAdmin?: boolean;
 };
 
+/**
+ * Autentica a requisição e garante que há um tenant ativo.
+ * A autorização por permissão fica a cargo de `requirePermission(...)`.
+ */
 export function auth(options: AuthOptions = {}) {
-  const { roles, requireTenant = true, requireGlobalAdmin = false } = options;
+  const { requireTenant = true, requireGlobalAdmin = false } = options;
 
   return (req: Request, res: Response, next: NextFunction) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
@@ -32,10 +34,6 @@ export function auth(options: AuthOptions = {}) {
 
     if (requireTenant && decoded.activeTenantId == null) {
       return res.status(409).json({ error: 'Selecione um tenant ativo para acessar este recurso' });
-    }
-
-    if (roles && !decoded.isGlobalAdmin && (!decoded.role || !roles.includes(decoded.role))) {
-      return res.status(403).json({ error: 'Sem permissão' });
     }
 
     req.user = decoded;

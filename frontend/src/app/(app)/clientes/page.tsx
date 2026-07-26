@@ -1,59 +1,148 @@
-import { fetchApi } from '@/lib/api';
+import { Building2, Mail, MapPin, Phone } from 'lucide-react';
+import { DataStatus } from '@/components/data-status';
+import { Badge, Card, EmptyState, PageHeader } from '@/components/ui';
+import { fetchApiSafe } from '@/lib/api';
+import { requirePermissionSession } from '@/lib/session';
+import { PERMISSIONS, can } from '@/lib/session-types';
+import { formatCep, formatCnpj, formatPhone, formatSla } from '@/lib/format';
 import { ClientForm } from './client-form';
 import { ClientResponsible } from './client-responsible';
 
 type Client = {
   id: number;
   nome: string;
+  razaoSocial?: string | null;
+  cnpj?: string | null;
   idWhatsapp: string;
   escalation: string;
+  telefone?: string | null;
+  site?: string | null;
+  cep?: string | null;
+  logradouro?: string | null;
+  numero?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  uf?: string | null;
+  slaMinutos?: number | null;
+  observacoes?: string | null;
   ativo: boolean;
   responsavelInterno?: { id: number; nome: string; email: string; telefone: string; equipe: { nome: string } } | null;
   equipes: Array<{ id: number; nome: string }>;
 };
-type Collaborator = { id: number; nome: string };
 
-export default async function Page() {
-  const [clients, collaborators] = await Promise.all([
-    fetchApi<Client[]>('/api/clientes'),
-    fetchApi<Collaborator[]>('/api/colaboradores'),
+type Colaborador = { id: number; nome: string };
+
+function enderecoResumo(cliente: Client) {
+  const linha1 = [cliente.logradouro, cliente.numero].filter(Boolean).join(', ');
+  const linha2 = [cliente.bairro, cliente.cidade, cliente.uf].filter(Boolean).join(' · ');
+  const cep = formatCep(cliente.cep);
+  return [linha1, linha2, cep].filter(Boolean).join(' — ') || null;
+}
+
+export default async function ClientesPage() {
+  const session = await requirePermissionSession(PERMISSIONS.CLIENT_VIEW);
+
+  const [clientesResult, colaboradoresResult] = await Promise.all([
+    fetchApiSafe<Client[]>('/api/clientes', []),
+    fetchApiSafe<Colaborador[]>('/api/colaboradores', []),
   ]);
 
-  return (
-    <div className="flex flex-col gap-6">
-      <ClientForm collaborators={collaborators} />
+  const podeCriar = can(session.permissoes, PERMISSIONS.CLIENT_CREATE);
+  const podeEditar = can(session.permissoes, PERMISSIONS.CLIENT_EDIT);
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {clients.map((client) => (
-          <section key={client.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold">{client.nome}</h2>
-              <span className={`rounded-full px-3 py-1 text-xs ${client.ativo ? 'bg-emerald-500/15 text-emerald-200' : 'bg-rose-500/15 text-rose-200'}`}>{client.ativo ? 'Ativo' : 'Inativo'}</span>
-            </div>
-            <dl className="mt-4 grid gap-3 text-sm text-slate-300">
-              <div><dt className="text-slate-500">WhatsApp ID</dt><dd>{client.idWhatsapp}</dd></div>
-              <div><dt className="text-slate-500">Escalation</dt><dd>{client.escalation}</dd></div>
-              <div>
-                <dt className="text-slate-500">Responsável interno</dt>
-                <dd>
-                  {client.responsavelInterno
-                    ? `${client.responsavelInterno.nome} · ${client.responsavelInterno.equipe.nome}`
-                    : 'Sem responsável definido'}
-                </dd>
-                <ClientResponsible
-                  clientId={client.id}
-                  currentResponsibleId={client.responsavelInterno?.id ?? null}
-                  collaborators={collaborators}
-                />
-              </div>
-              {client.responsavelInterno && (
-                <div><dt className="text-slate-500">Contato</dt><dd>{client.responsavelInterno.email} · {client.responsavelInterno.telefone}</dd></div>
-              )}
-              <div><dt className="text-slate-500">Equipes vinculadas</dt><dd>{client.equipes.map((team) => team.nome).join(', ') || 'Nenhuma'}</dd></div>
-            </dl>
-          </section>
-        ))}
-      </div>
-    </div>
+  return (
+    <>
+      <PageHeader
+        title="Clientes"
+        description="Empresas atendidas pela operação, com contato de escalation, SLA e responsável interno."
+      />
+
+      <DataStatus error={clientesResult.error} />
+
+      {podeCriar ? <ClientForm colaboradores={colaboradoresResult.data} /> : null}
+
+      {clientesResult.data.length === 0 ? (
+        <Card className="mt-4">
+          <EmptyState
+            icon={<Building2 size={24} />}
+            title="Nenhum cliente cadastrado"
+            description={podeCriar ? 'Cadastre o primeiro cliente usando o botão acima.' : 'Ainda não há clientes cadastrados nesta empresa.'}
+          />
+        </Card>
+      ) : (
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          {clientesResult.data.map((cliente) => {
+            const endereco = enderecoResumo(cliente);
+            return (
+              <Card key={cliente.id} className="p-4 sm:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-base font-semibold text-ink">{cliente.nome}</h2>
+                    {cliente.razaoSocial ? <p className="truncate text-xs text-ink-muted">{cliente.razaoSocial}</p> : null}
+                    {cliente.cnpj ? <p className="tabular mt-0.5 text-2xs text-ink-subtle">CNPJ {formatCnpj(cliente.cnpj)}</p> : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {cliente.slaMinutos ? <Badge tone="accent">SLA {formatSla(cliente.slaMinutos)}</Badge> : null}
+                    <Badge tone={cliente.ativo ? 'ok' : 'danger'}>{cliente.ativo ? 'Ativo' : 'Inativo'}</Badge>
+                  </div>
+                </div>
+
+                <dl className="mt-4 grid gap-2.5 text-sm">
+                  <div className="flex items-start gap-2">
+                    <Mail size={14} className="mt-0.5 shrink-0 text-ink-subtle" />
+                    <div className="min-w-0">
+                      <dt className="sr-only">Escalation</dt>
+                      <dd className="truncate text-ink-muted">{cliente.escalation}</dd>
+                    </div>
+                  </div>
+
+                  {cliente.telefone ? (
+                    <div className="flex items-start gap-2">
+                      <Phone size={14} className="mt-0.5 shrink-0 text-ink-subtle" />
+                      <dd className="text-ink-muted">{formatPhone(cliente.telefone)}</dd>
+                    </div>
+                  ) : null}
+
+                  {endereco ? (
+                    <div className="flex items-start gap-2">
+                      <MapPin size={14} className="mt-0.5 shrink-0 text-ink-subtle" />
+                      <dd className="text-ink-muted">{endereco}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+
+                <div className="mt-4 border-t border-line pt-3">
+                  <p className="eyebrow">Responsável interno</p>
+                  <p className="mt-1 text-sm text-ink">
+                    {cliente.responsavelInterno
+                      ? `${cliente.responsavelInterno.nome} · ${cliente.responsavelInterno.equipe.nome}`
+                      : 'Sem responsável definido'}
+                  </p>
+                  {podeEditar ? (
+                    <ClientResponsible
+                      clientId={cliente.id}
+                      currentResponsibleId={cliente.responsavelInterno?.id ?? null}
+                      colaboradores={colaboradoresResult.data}
+                    />
+                  ) : null}
+                </div>
+
+                {cliente.equipes.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {cliente.equipes.map((equipe) => (
+                      <Badge key={equipe.id}>{equipe.nome}</Badge>
+                    ))}
+                  </div>
+                ) : null}
+
+                {cliente.observacoes ? (
+                  <p className="mt-3 rounded-lg bg-surface-raised px-3 py-2 text-xs text-ink-muted">{cliente.observacoes}</p>
+                ) : null}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }

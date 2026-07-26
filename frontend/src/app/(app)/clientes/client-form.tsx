@@ -2,30 +2,144 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Building2, Search } from 'lucide-react';
+import { Alert, Button, Card, CardBody, CardHeader, Field, Input, Select, Textarea } from '@/components/ui';
 
-type Collaborator = { id: number; nome: string };
+type Colaborador = { id: number; nome: string };
 
-export function ClientForm({ collaborators }: { collaborators: Collaborator[] }) {
+type CnpjLookup = {
+  cnpj: string;
+  razaoSocial: string | null;
+  nomeFantasia: string | null;
+  telefone: string | null;
+  cep: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+};
+
+type CepLookup = { cep: string; logradouro: string | null; bairro: string | null; cidade: string | null; uf: string | null };
+
+const CAMPOS_VAZIOS = {
+  nome: '', razaoSocial: '', cnpj: '', idWhatsapp: '', escalation: '', telefone: '', site: '',
+  cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '',
+  slaMinutos: '', observacoes: '', responsavelInternoId: '',
+};
+
+export function ClientForm({ colaboradores }: { colaboradores: Colaborador[] }) {
   const router = useRouter();
+  const [aberto, setAberto] = useState(false);
+  const [campos, setCampos] = useState(CAMPOS_VAZIOS);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [issues, setIssues] = useState<Record<string, string[] | undefined> | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [sucesso, setSucesso] = useState(false);
+  const [buscando, setBuscando] = useState<'cnpj' | 'cep' | null>(null);
+  const [avisoBusca, setAvisoBusca] = useState<string | null>(null);
+
+  const set = (campo: keyof typeof CAMPOS_VAZIOS, valor: string) => setCampos((atual) => ({ ...atual, [campo]: valor }));
+
+  /// Preenche razão social, telefone e endereço a partir do CNPJ (BrasilAPI / Receita Federal).
+  async function buscarCnpj() {
+    const digits = campos.cnpj.replace(/\D/g, '');
+    if (digits.length !== 14) {
+      setAvisoBusca('Informe os 14 dígitos do CNPJ para buscar.');
+      return;
+    }
+
+    setBuscando('cnpj');
+    setAvisoBusca(null);
+    try {
+      const response = await fetch(`/api/lookup/cnpj/${digits}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setAvisoBusca(data.error || 'Não foi possível consultar o CNPJ.');
+        return;
+      }
+
+      const info = data as CnpjLookup;
+      setCampos((atual) => ({
+        ...atual,
+        // Só preenche o que ainda está vazio, para não sobrescrever o que a pessoa digitou.
+        nome: atual.nome || info.nomeFantasia || info.razaoSocial || '',
+        razaoSocial: atual.razaoSocial || info.razaoSocial || '',
+        telefone: atual.telefone || info.telefone || '',
+        cep: atual.cep || info.cep || '',
+        logradouro: atual.logradouro || info.logradouro || '',
+        numero: atual.numero || info.numero || '',
+        complemento: atual.complemento || info.complemento || '',
+        bairro: atual.bairro || info.bairro || '',
+        cidade: atual.cidade || info.cidade || '',
+        uf: atual.uf || info.uf || '',
+      }));
+    } catch {
+      setAvisoBusca('Falha de comunicação ao consultar o CNPJ.');
+    } finally {
+      setBuscando(null);
+    }
+  }
+
+  /// Preenche o endereço a partir do CEP (BrasilAPI com fallback para ViaCEP).
+  async function buscarCep() {
+    const digits = campos.cep.replace(/\D/g, '');
+    if (digits.length !== 8) {
+      setAvisoBusca('Informe os 8 dígitos do CEP para buscar.');
+      return;
+    }
+
+    setBuscando('cep');
+    setAvisoBusca(null);
+    try {
+      const response = await fetch(`/api/lookup/cep/${digits}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setAvisoBusca(data.error || 'Não foi possível consultar o CEP.');
+        return;
+      }
+
+      const info = data as CepLookup;
+      setCampos((atual) => ({
+        ...atual,
+        logradouro: info.logradouro || atual.logradouro,
+        bairro: info.bairro || atual.bairro,
+        cidade: info.cidade || atual.cidade,
+        uf: info.uf || atual.uf,
+      }));
+    } catch {
+      setAvisoBusca('Falha de comunicação ao consultar o CEP.');
+    } finally {
+      setBuscando(null);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     setError(null);
     setIssues(null);
-    setSuccess(false);
+    setSucesso(false);
 
-    const formData = new FormData(event.currentTarget);
-    const responsavelRaw = String(formData.get('responsavelInternoId') || '');
     const payload = {
-      nome: String(formData.get('nome') || ''),
-      idWhatsapp: String(formData.get('idWhatsapp') || ''),
-      escalation: String(formData.get('escalation') || ''),
-      responsavelInternoId: responsavelRaw ? Number(responsavelRaw) : null,
+      nome: campos.nome,
+      razaoSocial: campos.razaoSocial || null,
+      cnpj: campos.cnpj || null,
+      idWhatsapp: campos.idWhatsapp,
+      escalation: campos.escalation,
+      telefone: campos.telefone || null,
+      site: campos.site || null,
+      cep: campos.cep || null,
+      logradouro: campos.logradouro || null,
+      numero: campos.numero || null,
+      complemento: campos.complemento || null,
+      bairro: campos.bairro || null,
+      cidade: campos.cidade || null,
+      uf: campos.uf || null,
+      slaMinutos: campos.slaMinutos ? Number(campos.slaMinutos) : null,
+      observacoes: campos.observacoes || null,
+      responsavelInternoId: campos.responsavelInternoId ? Number(campos.responsavelInternoId) : null,
       ativo: true,
     };
 
@@ -35,16 +149,16 @@ export function ClientForm({ collaborators }: { collaborators: Collaborator[] })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setError(data.error || 'Erro ao adicionar cliente');
+        setError(data.error || 'Erro ao cadastrar cliente');
         setIssues(data.issues || null);
         return;
       }
 
-      setSuccess(true);
-      event.currentTarget.reset();
+      setSucesso(true);
+      setCampos(CAMPOS_VAZIOS);
       router.refresh();
     } catch {
       setError('Não foi possível confirmar a resposta do servidor — a lista foi atualizada, confira se o cliente já aparece abaixo.');
@@ -54,49 +168,153 @@ export function ClientForm({ collaborators }: { collaborators: Collaborator[] })
     }
   }
 
+  if (!aberto) {
+    return (
+      <Button variant="primary" onClick={() => setAberto(true)}>
+        <Building2 size={15} /> Cadastrar cliente
+      </Button>
+    );
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 md:grid-cols-2">
-      <h2 className="col-span-full text-base font-semibold text-white">Adicionar cliente</h2>
+    <Card>
+      <CardHeader
+        title="Novo cliente"
+        description="Informe o CNPJ ou o CEP para preencher os dados automaticamente."
+        action={
+          <Button variant="ghost" size="sm" onClick={() => setAberto(false)}>
+            Fechar
+          </Button>
+        }
+      />
+      <CardBody>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <p className="eyebrow mb-3">Identificação</p>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="CNPJ" htmlFor="cnpj" hint="Busca razão social, telefone e endereço na Receita Federal">
+                <div className="flex gap-2">
+                  <Input
+                    id="cnpj"
+                    value={campos.cnpj}
+                    onChange={(e) => set('cnpj', e.target.value)}
+                    placeholder="00.000.000/0000-00"
+                    inputMode="numeric"
+                  />
+                  <Button type="button" variant="secondary" onClick={buscarCnpj} disabled={buscando !== null} aria-label="Buscar CNPJ">
+                    {buscando === 'cnpj' ? '...' : <Search size={15} />}
+                  </Button>
+                </div>
+              </Field>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-slate-400" htmlFor="nome">Nome do cliente</label>
-        <input id="nome" name="nome" required minLength={2} placeholder="Banco Atlas" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" />
-      </div>
+              <Field label="Nome do cliente" htmlFor="nome">
+                <Input id="nome" required minLength={2} value={campos.nome} onChange={(e) => set('nome', e.target.value)} placeholder="Banco Atlas" />
+              </Field>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-slate-400" htmlFor="idWhatsapp">ID do grupo de WhatsApp</label>
-        <input id="idWhatsapp" name="idWhatsapp" required minLength={5} placeholder="5511999990001" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" />
-      </div>
+              <Field label="Razão social" htmlFor="razaoSocial">
+                <Input id="razaoSocial" value={campos.razaoSocial} onChange={(e) => set('razaoSocial', e.target.value)} />
+              </Field>
+            </div>
+          </div>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-slate-400" htmlFor="escalation">E-mail de escalation</label>
-        <input id="escalation" name="escalation" type="email" required placeholder="sev1@cliente.com" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" />
-      </div>
+          <div>
+            <p className="eyebrow mb-3">Contato e operação</p>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="ID do grupo de WhatsApp" htmlFor="idWhatsapp">
+                <Input id="idWhatsapp" required minLength={3} value={campos.idWhatsapp} onChange={(e) => set('idWhatsapp', e.target.value)} placeholder="5511999990001" />
+              </Field>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-slate-400" htmlFor="responsavelInternoId">Responsável interno (opcional)</label>
-        <select id="responsavelInternoId" name="responsavelInternoId" defaultValue="" className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white">
-          <option value="">Definir depois</option>
-          {collaborators.map((collaborator) => (
-            <option key={collaborator.id} value={collaborator.id}>{collaborator.nome}</option>
-          ))}
-        </select>
-      </div>
+              <Field label="E-mail de escalation" htmlFor="escalation">
+                <Input id="escalation" type="email" required value={campos.escalation} onChange={(e) => set('escalation', e.target.value)} placeholder="sev1@cliente.com" />
+              </Field>
 
-      <div className="col-span-full flex items-center gap-3">
-        <button type="submit" disabled={pending} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
-          {pending ? 'Salvando...' : 'Adicionar cliente'}
-        </button>
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        {success && <p className="text-sm text-emerald-400">Cliente adicionado com sucesso.</p>}
-      </div>
-      {issues && (
-        <ul className="col-span-full list-inside list-disc text-xs text-red-400">
-          {Object.entries(issues).map(([field, messages]) =>
-            messages?.map((message) => <li key={`${field}-${message}`}>{message}</li>)
-          )}
-        </ul>
-      )}
-    </form>
+              <Field label="Telefone" htmlFor="telefone">
+                <Input id="telefone" value={campos.telefone} onChange={(e) => set('telefone', e.target.value)} placeholder="1130001000" />
+              </Field>
+
+              <Field label="Site" htmlFor="site">
+                <Input id="site" value={campos.site} onChange={(e) => set('site', e.target.value)} placeholder="cliente.com.br" />
+              </Field>
+
+              <Field label="SLA de resposta (minutos)" htmlFor="slaMinutos">
+                <Input id="slaMinutos" type="number" min={1} value={campos.slaMinutos} onChange={(e) => set('slaMinutos', e.target.value)} placeholder="30" />
+              </Field>
+
+              <Field label="Responsável interno" htmlFor="responsavelInternoId" hint="Pode ser definido depois">
+                <Select id="responsavelInternoId" value={campos.responsavelInternoId} onChange={(e) => set('responsavelInternoId', e.target.value)}>
+                  <option value="">Definir depois</option>
+                  {colaboradores.map((colaborador) => (
+                    <option key={colaborador.id} value={colaborador.id}>
+                      {colaborador.nome}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+          </div>
+
+          <div>
+            <p className="eyebrow mb-3">Endereço</p>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Field label="CEP" htmlFor="cep">
+                <div className="flex gap-2">
+                  <Input id="cep" value={campos.cep} onChange={(e) => set('cep', e.target.value)} placeholder="01310-100" inputMode="numeric" />
+                  <Button type="button" variant="secondary" onClick={buscarCep} disabled={buscando !== null} aria-label="Buscar CEP">
+                    {buscando === 'cep' ? '...' : <Search size={15} />}
+                  </Button>
+                </div>
+              </Field>
+
+              <Field label="Logradouro" htmlFor="logradouro" className="sm:col-span-2">
+                <Input id="logradouro" value={campos.logradouro} onChange={(e) => set('logradouro', e.target.value)} />
+              </Field>
+
+              <Field label="Número" htmlFor="numero">
+                <Input id="numero" value={campos.numero} onChange={(e) => set('numero', e.target.value)} />
+              </Field>
+
+              <Field label="Complemento" htmlFor="complemento">
+                <Input id="complemento" value={campos.complemento} onChange={(e) => set('complemento', e.target.value)} />
+              </Field>
+
+              <Field label="Bairro" htmlFor="bairro">
+                <Input id="bairro" value={campos.bairro} onChange={(e) => set('bairro', e.target.value)} />
+              </Field>
+
+              <Field label="Cidade" htmlFor="cidade">
+                <Input id="cidade" value={campos.cidade} onChange={(e) => set('cidade', e.target.value)} />
+              </Field>
+
+              <Field label="UF" htmlFor="uf">
+                <Input id="uf" maxLength={2} value={campos.uf} onChange={(e) => set('uf', e.target.value.toUpperCase())} placeholder="SP" />
+              </Field>
+            </div>
+          </div>
+
+          <Field label="Observações" htmlFor="observacoes">
+            <Textarea id="observacoes" rows={2} value={campos.observacoes} onChange={(e) => set('observacoes', e.target.value)} placeholder="Particularidades do atendimento, janelas de manutenção, contatos extras..." />
+          </Field>
+
+          {avisoBusca ? <Alert tone="warn">{avisoBusca}</Alert> : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {issues ? (
+            <Alert tone="danger">
+              <ul className="list-inside list-disc">
+                {Object.entries(issues).map(([campo, mensagens]) =>
+                  mensagens?.map((mensagem) => <li key={`${campo}-${mensagem}`}>{mensagem}</li>)
+                )}
+              </ul>
+            </Alert>
+          ) : null}
+
+          <div className="flex items-center gap-3">
+            <Button type="submit" variant="primary" disabled={pending}>
+              {pending ? 'Salvando...' : 'Cadastrar cliente'}
+            </Button>
+            {sucesso ? <span className="text-xs text-ok">Cliente cadastrado com sucesso.</span> : null}
+          </div>
+        </form>
+      </CardBody>
+    </Card>
   );
 }

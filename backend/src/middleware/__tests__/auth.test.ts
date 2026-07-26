@@ -11,6 +11,10 @@ function mockResponse() {
   return res;
 }
 
+function tokenFor(payload: Record<string, unknown>) {
+  return jwt.sign(payload, env.jwtSecret);
+}
+
 describe('auth middleware', () => {
   it('rejeita requisição sem token', () => {
     const req = { headers: {} } as Request;
@@ -34,26 +38,8 @@ describe('auth middleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('rejeita usuário autenticado sem a role exigida', () => {
-    const token = jwt.sign(
-      { sub: 'gestor@empresa.com', userId: 2, isGlobalAdmin: false, activeTenantId: 1, role: 'gestor' },
-      env.jwtSecret
-    );
-    const req = { headers: { authorization: `Bearer ${token}` } } as Request;
-    const res = mockResponse();
-    const next = vi.fn();
-
-    auth({ roles: ['admin'] })(req, res, next);
-
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(next).not.toHaveBeenCalled();
-  });
-
   it('rejeita quando não há tenant ativo selecionado', () => {
-    const token = jwt.sign(
-      { sub: 'global@empresa.com', userId: 3, isGlobalAdmin: true, activeTenantId: null, role: null },
-      env.jwtSecret
-    );
+    const token = tokenFor({ sub: 'global@empresa.com', userId: 3, isGlobalAdmin: true, activeTenantId: null, roleCodigo: null });
     const req = { headers: { authorization: `Bearer ${token}` } } as Request;
     const res = mockResponse();
     const next = vi.fn();
@@ -64,11 +50,19 @@ describe('auth middleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('permite rota de plataforma sem tenant ativo', () => {
+    const token = tokenFor({ sub: 'global@empresa.com', userId: 3, isGlobalAdmin: true, activeTenantId: null, roleCodigo: null });
+    const req = { headers: { authorization: `Bearer ${token}` } } as Request;
+    const res = mockResponse();
+    const next = vi.fn();
+
+    auth({ requireTenant: false })(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it('rejeita rota exclusiva do Administrador Global para usuário comum', () => {
-    const token = jwt.sign(
-      { sub: 'admin@empresa.com', userId: 1, isGlobalAdmin: false, activeTenantId: 1, role: 'admin' },
-      env.jwtSecret
-    );
+    const token = tokenFor({ sub: 'admin@empresa.com', userId: 1, isGlobalAdmin: false, activeTenantId: 1, roleCodigo: 'admin_tenant' });
     const req = { headers: { authorization: `Bearer ${token}` } } as Request;
     const res = mockResponse();
     const next = vi.fn();
@@ -79,11 +73,8 @@ describe('auth middleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('libera acesso e popula req.user para token e role válidos', () => {
-    const token = jwt.sign(
-      { sub: 'admin@empresa.com', userId: 1, isGlobalAdmin: false, activeTenantId: 1, role: 'admin' },
-      env.jwtSecret
-    );
+  it('libera acesso e popula req.user para token válido com tenant', () => {
+    const token = tokenFor({ sub: 'admin@empresa.com', userId: 1, isGlobalAdmin: false, activeTenantId: 1, roleCodigo: 'admin_tenant' });
     const req = { headers: { authorization: `Bearer ${token}` } } as Request;
     const res = mockResponse();
     const next = vi.fn();
@@ -91,20 +82,6 @@ describe('auth middleware', () => {
     auth()(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect(req.user).toMatchObject({ sub: 'admin@empresa.com', userId: 1, role: 'admin', activeTenantId: 1 });
-  });
-
-  it('Administrador Global sempre passa na checagem de role', () => {
-    const token = jwt.sign(
-      { sub: 'global@empresa.com', userId: 9, isGlobalAdmin: true, activeTenantId: 1, role: 'admin' },
-      env.jwtSecret
-    );
-    const req = { headers: { authorization: `Bearer ${token}` } } as Request;
-    const res = mockResponse();
-    const next = vi.fn();
-
-    auth({ roles: ['gestor'] })(req, res, next);
-
-    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.user).toMatchObject({ sub: 'admin@empresa.com', userId: 1, roleCodigo: 'admin_tenant', activeTenantId: 1 });
   });
 });

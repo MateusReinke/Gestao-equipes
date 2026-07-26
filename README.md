@@ -1,109 +1,125 @@
-# Sistema de Gestão Operacional
+# Gestão Operacional
 
-Sistema full-stack **multi-tenant** para gestão de clientes, equipes, colaboradores, gestores, escalas, plantões e férias. Cada empresa (tenant) tem seus próprios dados, totalmente isolados dos demais.
+Plataforma **SaaS multi-tenant** para operações de monitoramento (NOC/Observabilidade): equipes, escalas com revezamento, turnos, trocas de plantão, clientes, RH e auditoria — com isolamento total de dados entre empresas.
 
 ## Stack
 
-- Frontend: Next.js 15 + React + TypeScript + Tailwind
-- Backend: Node.js + Express + TypeScript + JWT
-- Banco: PostgreSQL 16
-- ORM: Prisma
-- Deploy: Docker Compose
+- **Frontend:** Next.js 15 (App Router) + React 18 + TypeScript + Tailwind
+- **Backend:** Node.js + Express + TypeScript + JWT
+- **Banco:** PostgreSQL 16 · **ORM:** Prisma
+- **Deploy:** Docker Compose
 
 ## Subida em produção
 
-1. Copie `.env.example` para `.env` e defina um `JWT_SECRET` forte (ex.: `openssl rand -hex 32`). O backend recusa subir sem essa variável.
+1. Copie `.env.example` para `.env` e defina um `JWT_SECRET` forte (`openssl rand -hex 32`). O backend recusa subir sem essa variável.
 2. Suba os containers:
 
 ```bash
 docker-compose up -d --build
 ```
 
-Após a subida:
-
 - Frontend: `http://localhost:4333` — abre em `/login`
-- Backend: `http://localhost:54000`
-- Healthcheck: `http://localhost:54000/health`
+- Backend: `http://localhost:54000` · Healthcheck: `/health`
 
-Em uma base **vazia**, defina `SEED_ON_BOOT=true` no `.env` (ou rode `docker compose exec backend npm run seed`) para criar o tenant "Empresa Padrão", o Administrador Global e os dados de demonstração:
+Em uma base **vazia**, defina `SEED_ON_BOOT=true` (ou rode `docker compose exec backend npm run seed`) para criar a empresa inicial e os usuários de demonstração:
 
-- Administrador Global: `admin@gestao.local` / `Admin@123` (também é membro da Empresa Padrão como admin, então continua vendo a operação normalmente)
-- Gestor de teste: `gestor@gestao.local` / `Gestor@123`
+| Usuário | Acesso | Papel |
+| --- | --- | --- |
+| `admin@gestao.local` / `Admin@123` | Empresa Padrão + console da plataforma | Administrador Global |
+| `gestor@gestao.local` / `Gestor@123` | Empresa Padrão | Gestor |
 
 Troque essas senhas assim que possível — são apenas o bootstrap inicial.
 
-## O que acontece automaticamente no deploy
+O `entrypoint.sh` roda `prisma generate` → `prisma migrate deploy` → seed **opcional e idempotente** (só cria se o admin ainda não existir; nunca apaga nada) → inicialização da API.
 
-O container do backend executa automaticamente:
+Para resetar o dataset de demonstração em desenvolvimento local, use `npm run seed:dev:reset` em `backend/` — cria dois tenants para exercitar o isolamento e se recusa a rodar com `NODE_ENV=production`.
 
-1. `prisma generate`
-2. `prisma migrate deploy`
-3. seed **opcional** (só roda se `SEED_ON_BOOT=true`) — e é idempotente: só cria dados se o admin padrão ainda não existir. Nunca apaga dados existentes.
-4. inicialização da API
+---
 
-Sem necessidade de:
+## Multi-tenancy
 
-- criar banco manualmente
-- rodar SQL manual
-- configurar usuário inicial após o deploy
+Cada empresa é um **tenant**. Toda tabela de domínio carrega `tenant_id`, e cada repositório do backend recebe o tenant explicitamente — nenhuma consulta lista dados sem esse filtro (travado por testes automatizados).
 
-Para resetar o dataset de demonstração em desenvolvimento local (apaga tudo e recria), use `npm run seed:dev:reset` dentro de `backend/` — esse script se recusa a rodar com `NODE_ENV=production`.
+Um usuário é uma **identidade global** (e-mail único na plataforma) que pode ter vínculo — e papel diferente — em mais de uma empresa:
 
-## Login e multi-tenancy
+- **1 vínculo:** entra direto naquela empresa.
+- **2+ vínculos:** o login mostra uma tela de seleção de empresa. A sessão fica presa à empresa escolhida até o próximo login.
+- **Administrador Global:** não depende de vínculo. Entra no **console da plataforma** (`/console`), onde cria/edita/remove empresas e entra em qualquer uma delas. Dentro de uma empresa, um seletor no cabeçalho troca de contexto sem deslogar. Nenhum outro papel tem esse seletor.
 
-O painel exige autenticação de verdade: acesse `/login`, informe e-mail e senha. A sessão fica em um cookie `httpOnly` de curta duração (12h, alinhado à expiração do JWT).
+## Controle de acesso (RBAC)
 
-Um usuário é uma **identidade global** (e-mail único na plataforma) que pode ter vínculo — e papel — em mais de uma empresa (tenant):
+Autorização é por **permissão nomeada**, não por papel — as rotas usam `requirePermission('shift.approve_swap')`, e o papel é apenas um conjunto pré-montado de permissões.
 
-- **1 vínculo**: login entra direto nessa empresa.
-- **2+ vínculos**: o login mostra uma tela de seleção de empresa antes de emitir a sessão. A sessão fica presa a essa empresa até o próximo login (sem troca dentro do app para esse usuário).
-- **Administrador Global** (`isGlobalAdmin`): não depende de vínculo. Entra direto no **console da plataforma** (`/console`), onde vê todas as empresas cadastradas, pode criar novas e "entrar" em qualquer uma delas. Uma vez dentro de uma empresa, um seletor no cabeçalho permite trocar para outra ou voltar ao console — sem precisar deslogar. Nenhum outro papel tem esse seletor.
+**Papéis padrão** (7, imutáveis): Administrador da Empresa, Gestor, Líder, Analista, Operador, Cliente e Visitante. Cada empresa pode criar **papéis próprios** com qualquer combinação das 36 permissões do catálogo.
 
-Isolamento: toda tabela de domínio (clientes, equipes, colaboradores, escalas, plantões, férias etc.) tem uma coluna `tenant_id`, e cada repositório do backend recebe o tenant explicitamente — nenhuma consulta lista dados sem filtrar pelo tenant ativo da sessão.
+Além do papel, existem **overrides individuais** por usuário (`grant`/`deny`), que sempre vencem sobre o papel:
 
-## Serviços Docker
+```
+permissões efetivas = (∪ permissões dos papéis) + grants − denies
+```
 
-O `docker-compose.yml` publica três serviços obrigatórios:
+A proteção é em três camadas: o menu só mostra o que a pessoa pode acessar, a rota do frontend redireciona quem não tem permissão, e a API bloqueia de qualquer forma.
 
-- `postgres`
-- `backend`
-- `frontend`
+## Escalas e turnos
 
-## Endpoints obrigatórios entregues
+O modelo separa **regra** de **execução**:
 
-- `GET /plantao/atual`
-- `GET /clientes/:id/responsavel`
-- `GET /clientes/:id/plantonista`
+- **Escala** é a regra: tipo, faixas de horário por dia da semana e a ordem do revezamento.
+- **Turno** é o concreto: uma pessoa, um dia, um horário. É a unidade que aparece no calendário e que pode ser trocada.
 
-## Módulos do frontend
+Gerar turnos traduz a regra em dias concretos. O comportamento por tipo:
 
-- Dashboard
-- Clientes
-- Equipes
-- Colaboradores
-- Gestores
-- Escalas
-- Plantões
-- Férias
+| Tipo | Como distribui |
+| --- | --- |
+| **12x36** | Revezamento diário — o colaborador da vez é `(dias desde o início) % nº de pessoas`. É o que faz duas pessoas se alternarem dia sim, dia não. |
+| **5x2** | Escala fixa — todos os atribuídos trabalham em todos os dias definidos. |
+| **Personalizada** | Revezamento por faixa — cada janela de horário do dia vai para o próximo da rotação. |
 
-## Regras operacionais implementadas
+A geração é **idempotente e ancorada**: regerar só um pedaço do meio do período mantém o alinhamento do revezamento já combinado. Turnos que caem em férias/ausências aprovadas são criados mesmo assim, mas reportados como conflito para o gestor decidir a cobertura.
 
-- multi-tenancy com isolamento total de dados por `tenant_id`
-- autenticação JWT com perfis `admin` e `gestor` **por tenant**, mais o escopo de plataforma `isGlobalAdmin`
-- gestor visualiza apenas equipes sob sua gestão, dentro do tenant ativo
-- múltiplos plantonistas simultâneos
-- identificação de plantonistas atuais e próximos
-- colaborador em férias aprovadas não aparece como plantonista atual
-- escalas 12x36, 5x2 e personalizadas
+### Trocas de turno
+
+Quando duas pessoas combinam trocar um dia específico:
+
+1. **Solicitação** — quem pede escolhe o próprio turno e, na troca mútua, o turno do colega que vai assumir (ou pede **cobertura**, sem contrapartida). O motivo fica registrado.
+2. **Aceite do colega** — o pedido só avança se a outra pessoa concordar.
+3. **Aprovação** — quem tem `shift.approve_swap` aprova, e só então os turnos trocam de dono numa transação.
+
+O turno resultante fica com status `trocado` e guarda quem estava escalado originalmente — o calendário mostra "era Ana", e nada do histórico se perde. Regerar a escala nunca sobrescreve turnos que vieram de troca aprovada.
+
+## Integrações públicas
+
+Cadastro de clientes preenche automaticamente a partir de APIs gratuitas, com o backend fazendo a chamada (evita CORS e padroniza a resposta):
+
+- **CNPJ** → [BrasilAPI](https://brasilapi.com.br) (dados da Receita Federal): razão social, telefone e endereço. Os dígitos verificadores são validados localmente antes de gastar a chamada.
+- **CEP** → BrasilAPI com fallback para [ViaCEP](https://viacep.com.br): logradouro, bairro, cidade e UF.
+
+Se a consulta falhar, o formulário continua utilizável — os campos são apenas preenchidos manualmente.
+
+## Módulos
+
+| Módulo | O que faz |
+| --- | --- |
+| **Dashboard** | Quem está em turno agora, próximos turnos, trocas pendentes, férias e clientes. |
+| **Turnos** | Calendário semanal da operação, com status e rastreio de trocas. |
+| **Trocas** | Fluxo completo de solicitação → aceite → aprovação. |
+| **Escalas** | Regras de revezamento com faixas de horário e ordem da rotação. |
+| **Clientes** | Cadastro completo com CNPJ/CEP, SLA, escalation e responsável interno. |
+| **Equipes / Colaboradores** | Estrutura da operação e disponibilidade para plantão/sobreaviso. |
+| **Férias e ausências** | Solicitação e aprovação; períodos aprovados viram conflito na geração de turnos. |
+| **Usuários e papéis** | Gestão de acesso, atribuição de papéis e criação de papéis customizados. |
+| **Auditoria** | Quem fez, o quê, quando, de onde — com estado antes/depois. |
+
+## Auditoria
+
+Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes`, `depois`, `IP` e `user-agent`. A escrita nunca derruba a operação que está auditando: falha de auditoria é logada, não propagada.
 
 ## Estrutura do repositório
 
-- `backend/`: API REST e autenticação — `controllers/` (HTTP) → `services/` (regra de negócio) → `repositories/` (acesso a dados via Prisma, sempre recebendo `tenantId` explícito)
-- `frontend/`: painel web corporativo — `/login` público, `/console` exclusivo do Administrador Global, demais rotas protegidas pelo grupo `(app)` e por `middleware.ts`
-- `prisma/`: schema, migrations, `seed.ts` (idempotente, produção) e `seed.dev.ts` (destrutivo, só para desenvolvimento local — cria dois tenants para testar isolamento)
-- `docker/`: Dockerfiles e compose espelhado
-
-A migration `202607251900_multi_tenant_foundation` introduz `tenants`, `tenant_memberships` e a coluna `tenant_id` em toda tabela de domínio. Ela foi escrita à mão (não gerada automaticamente) para rodar em cima de uma base **já em produção, sem apagar nada**: cria um tenant "default", migra todo usuário/registro existente para ele (preservando papel e vínculo com colaborador) e só então torna as colunas obrigatórias.
+- `backend/` — `controllers/` (HTTP) → `services/` (regra de negócio) → `repositories/` (Prisma, sempre com `tenantId` explícito)
+- `frontend/` — `/login` e `/console` públicos ao seu escopo; demais rotas protegidas pelo grupo `(app)`, por `middleware.ts` e por guarda de permissão em cada página
+- `prisma/` — schema, migrations, `seed.ts` (idempotente) e `seed.dev.ts` (destrutivo, só local)
+- `docker/` — Dockerfiles e compose espelhado
 
 ## Testes
 
@@ -111,4 +127,10 @@ A migration `202607251900_multi_tenant_foundation` introduz `tenants`, `tenant_m
 cd backend && npm test
 ```
 
-Cobre login (credenciais válidas/inválidas/usuário inativo, único vínculo, múltiplos vínculos, Administrador Global), o middleware de autenticação (token ausente/inválido, role sem permissão, tenant ativo obrigatório, rotas exclusivas do Administrador Global), a resolução de escopo por equipe e — principalmente — que todo repositório filtra por `tenant_id`, incluindo o caso de um `id` que existe em outro tenant (deve retornar "não encontrado", nunca o registro de outro tenant).
+64 testes cobrindo:
+
+- **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
+- **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
+- **Isolamento:** todo repositório filtra por `tenant_id` — inclusive o caso de um `id` que existe em outro tenant (retorna "não encontrado", nunca o dado alheio).
+- **Gerador de turnos:** revezamento 12x36 com 2 e 3 pessoas, escala fixa 5x2, faixas sobrepostas, vigência de atribuições e alinhamento da rotação ao regerar períodos parciais.
+- **Validação de CNPJ:** dígitos verificadores, máscara e sequências repetidas.

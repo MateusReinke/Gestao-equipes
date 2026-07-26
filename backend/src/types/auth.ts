@@ -4,6 +4,6 @@ export type JwtPayload = {
   isGlobalAdmin: boolean;
   /** null quando o Administrador Global está no console da plataforma, sem tenant selecionado. */
   activeTenantId: number | null;
-  /** papel do usuário dentro de activeTenantId; null quando activeTenantId é null. */
-  role: 'admin' | 'gestor' | null;
+  /** código do papel dentro de activeTenantId; null quando não há tenant ativo. */
+  roleCodigo: string | null;
 };

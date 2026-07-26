@@ -2,20 +2,21 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Button, Select } from '@/components/ui';
 
-type Collaborator = { id: number; nome: string };
+type Colaborador = { id: number; nome: string };
 
 export function ClientResponsible({
   clientId,
   currentResponsibleId,
-  collaborators,
+  colaboradores,
 }: {
   clientId: number;
   currentResponsibleId: number | null;
-  collaborators: Collaborator[];
+  colaboradores: Colaborador[];
 }) {
   const router = useRouter();
-  const [editing, setEditing] = useState(false);
+  const [editando, setEditando] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,42 +41,48 @@ export function ClientResponsible({
         return;
       }
 
-      setEditing(false);
+      setEditando(false);
       router.refresh();
     } catch {
-      setError('Não foi possível confirmar a resposta do servidor — a lista foi atualizada, confira se a alteração já foi aplicada.');
+      setError('Não foi possível confirmar a resposta do servidor — a lista foi atualizada, confira a alteração.');
       router.refresh();
     } finally {
       setPending(false);
     }
   }
 
-  if (editing) {
+  if (editando) {
     return (
-      <form onSubmit={handleSave} className="mt-1 flex items-center gap-2">
-        <select
-          name="responsavelInternoId"
-          defaultValue={currentResponsibleId ?? ''}
-          className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-white"
-        >
+      <form onSubmit={handleSave} className="mt-2 flex flex-wrap items-center gap-2">
+        <Select name="responsavelInternoId" defaultValue={currentResponsibleId ?? ''} className="max-w-[16rem] py-1.5 text-xs">
           <option value="">Sem responsável</option>
-          {collaborators.map((collaborator) => (
-            <option key={collaborator.id} value={collaborator.id}>{collaborator.nome}</option>
+          {colaboradores.map((colaborador) => (
+            <option key={colaborador.id} value={colaborador.id}>
+              {colaborador.nome}
+            </option>
           ))}
-        </select>
-        <button type="submit" disabled={pending} className="rounded-lg bg-emerald-600 px-2 py-1 text-xs text-white disabled:opacity-60">
-          Salvar
-        </button>
-        <button type="button" onClick={() => { setEditing(false); setError(null); }} className="text-xs text-slate-400">
+        </Select>
+        <Button type="submit" size="sm" variant="primary" disabled={pending}>
+          {pending ? 'Salvando...' : 'Salvar'}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setEditando(false);
+            setError(null);
+          }}
+        >
           Cancelar
-        </button>
-        {error && <span className="text-xs text-red-400">{error}</span>}
+        </Button>
+        {error ? <span className="w-full text-2xs text-danger">{error}</span> : null}
       </form>
     );
   }
 
   return (
-    <button type="button" onClick={() => setEditing(true)} className="mt-1 text-xs text-sky-400 hover:text-sky-300">
+    <button type="button" onClick={() => setEditando(true)} className="mt-1.5 text-xs font-medium text-accent hover:underline">
       {currentResponsibleId ? 'Alterar responsável' : 'Definir responsável'}
     </button>
   );

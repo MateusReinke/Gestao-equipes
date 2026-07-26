@@ -7,31 +7,30 @@ vi.mock('../../repositories/user.repository', () => ({
 vi.mock('../../repositories/tenant.repository', () => ({
   tenantRepository: { findById: vi.fn() },
 }));
+vi.mock('../../repositories/role.repository', () => ({
+  roleRepository: { findSystemByCodigo: vi.fn() },
+}));
 
 import { userRepository } from '../../repositories/user.repository';
-import {
-  InvalidCredentialsError,
-  NoTenantAccessError,
-  TenantSelectionRequiredError,
-  login,
-} from '../auth.service';
+import { InvalidCredentialsError, NoTenantAccessError, TenantSelectionRequiredError, login } from '../auth.service';
 
 const mockedFindByEmailWithMemberships = vi.mocked(userRepository.findByEmailWithMemberships);
 
-function membership(tenantId: number, role: 'admin' | 'gestor', tenantNome = `Tenant ${tenantId}`) {
+function membership(tenantId: number, roleCodigo: 'admin_tenant' | 'gestor', tenantNome = `Tenant ${tenantId}`) {
   return {
     id: tenantId,
     userId: 1,
     tenantId,
-    role,
+    roleId: 1,
     colaboradorId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
+    role: { id: 1, codigo: roleCodigo, nome: roleCodigo, descricao: '', isSystem: true, ordem: 10, tenantId: null },
     tenant: { id: tenantId, nome: tenantNome, slug: `tenant-${tenantId}`, ativo: true, createdAt: new Date(), updatedAt: new Date() },
   };
 }
 
-function fakeUser(overrides: Record<string, unknown> = {}, senhaHash: string) {
+function fakeUser(overrides: Record<string, unknown>, senhaHash: string) {
   return {
     id: 1,
     nome: 'Usuário Teste',
@@ -47,9 +46,7 @@ function fakeUser(overrides: Record<string, unknown> = {}, senhaHash: string) {
 }
 
 describe('auth.service login', () => {
-  beforeEach(() => {
-    mockedFindByEmailWithMemberships.mockReset();
-  });
+  beforeEach(() => mockedFindByEmailWithMemberships.mockReset());
 
   it('rejeita usuário inexistente', async () => {
     mockedFindByEmailWithMemberships.mockResolvedValue(null);
@@ -87,9 +84,7 @@ describe('auth.service login', () => {
 
   it('usuário com um único vínculo entra direto nesse tenant', async () => {
     const senhaHash = await bcrypt.hash('Segredo@123', 4);
-    mockedFindByEmailWithMemberships.mockResolvedValue(
-      fakeUser({ memberships: [membership(1, 'gestor')] }, senhaHash) as never
-    );
+    mockedFindByEmailWithMemberships.mockResolvedValue(fakeUser({ memberships: [membership(1, 'gestor')] }, senhaHash) as never);
 
     const result = await login('usuario@empresa.com', 'Segredo@123');
 
@@ -99,7 +94,7 @@ describe('auth.service login', () => {
   it('usuário com múltiplos vínculos sem escolher tenant recebe a lista para seleção', async () => {
     const senhaHash = await bcrypt.hash('Segredo@123', 4);
     mockedFindByEmailWithMemberships.mockResolvedValue(
-      fakeUser({ memberships: [membership(1, 'gestor'), membership(2, 'admin')] }, senhaHash) as never
+      fakeUser({ memberships: [membership(1, 'gestor'), membership(2, 'admin_tenant')] }, senhaHash) as never
     );
 
     await expect(login('usuario@empresa.com', 'Segredo@123')).rejects.toBeInstanceOf(TenantSelectionRequiredError);
@@ -108,7 +103,7 @@ describe('auth.service login', () => {
   it('usuário com múltiplos vínculos escolhendo um tenant válido recebe token para ele', async () => {
     const senhaHash = await bcrypt.hash('Segredo@123', 4);
     mockedFindByEmailWithMemberships.mockResolvedValue(
-      fakeUser({ memberships: [membership(1, 'gestor'), membership(2, 'admin')] }, senhaHash) as never
+      fakeUser({ memberships: [membership(1, 'gestor'), membership(2, 'admin_tenant')] }, senhaHash) as never
     );
 
     const result = await login('usuario@empresa.com', 'Segredo@123', 2);
@@ -119,7 +114,7 @@ describe('auth.service login', () => {
   it('rejeita tenant escolhido que não pertence ao usuário', async () => {
     const senhaHash = await bcrypt.hash('Segredo@123', 4);
     mockedFindByEmailWithMemberships.mockResolvedValue(
-      fakeUser({ memberships: [membership(1, 'gestor'), membership(2, 'admin')] }, senhaHash) as never
+      fakeUser({ memberships: [membership(1, 'gestor'), membership(2, 'admin_tenant')] }, senhaHash) as never
     );
 
     await expect(login('usuario@empresa.com', 'Segredo@123', 999)).rejects.toBeInstanceOf(InvalidCredentialsError);

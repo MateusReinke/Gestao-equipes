@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { userRepository } from '../repositories/user.repository';
 import { tenantRepository } from '../repositories/tenant.repository';
+import { roleRepository } from '../repositories/role.repository';
 import { JwtPayload } from '../types/auth';
 
 export class InvalidCredentialsError extends Error {}
@@ -29,7 +30,7 @@ export async function login(email: string, senha: string, tenantId?: number) {
   const publicUser = { id: user.id, nome: user.nome, email: user.email, isGlobalAdmin: user.isGlobalAdmin };
 
   if (user.isGlobalAdmin) {
-    const token = signSession({ sub: user.email, userId: user.id, isGlobalAdmin: true, activeTenantId: null, role: null });
+    const token = signSession({ sub: user.email, userId: user.id, isGlobalAdmin: true, activeTenantId: null, roleCodigo: null });
     return { token, user: publicUser, activeTenant: null as TenantSummary | null };
   }
 
@@ -54,7 +55,7 @@ export async function login(email: string, senha: string, tenantId?: number) {
     userId: user.id,
     isGlobalAdmin: false,
     activeTenantId: membership.tenantId,
-    role: membership.role,
+    roleCodigo: membership.role.codigo,
   });
 
   return {
@@ -68,13 +69,21 @@ export async function switchTenant(user: JwtPayload, tenantId: number | null) {
   if (!user.isGlobalAdmin) throw new InvalidCredentialsError('Restrito ao Administrador Global');
 
   if (tenantId == null) {
-    const token = signSession({ sub: user.sub, userId: user.userId, isGlobalAdmin: true, activeTenantId: null, role: null });
+    const token = signSession({ sub: user.sub, userId: user.userId, isGlobalAdmin: true, activeTenantId: null, roleCodigo: null });
     return { token, activeTenant: null as TenantSummary | null };
   }
 
   const tenant = await tenantRepository.findById(tenantId);
   if (!tenant) throw new InvalidCredentialsError('Tenant inválido');
 
-  const token = signSession({ sub: user.sub, userId: user.userId, isGlobalAdmin: true, activeTenantId: tenant.id, role: 'admin' });
+  const adminRole = await roleRepository.findSystemByCodigo('admin_tenant');
+
+  const token = signSession({
+    sub: user.sub,
+    userId: user.userId,
+    isGlobalAdmin: true,
+    activeTenantId: tenant.id,
+    roleCodigo: adminRole?.codigo ?? 'admin_tenant',
+  });
   return { token, activeTenant: { id: tenant.id, nome: tenant.nome, slug: tenant.slug } };
 }

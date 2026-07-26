@@ -7,11 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-  admin
-  gestor
-}
-
 enum ContractType {
   clt
   pj
@@ -40,6 +35,64 @@ enum VacationStatus {
   pendente
   aprovado
   rejeitado
+  cancelado
+}
+
+enum ShiftType {
+  turno
+  plantao
+  sobreaviso
+}
+
+enum ShiftStatus {
+  planejado
+  confirmado
+  trocado
+  cancelado
+}
+
+enum SwapType {
+  troca
+  cobertura
+}
+
+enum SwapStatus {
+  pendente
+  aceito_pelo_par
+  aprovado
+  rejeitado
+  cancelado
+}
+
+enum AbsenceType {
+  falta
+  atestado
+  licenca
+  folga
+  banco_horas
+  outro
+}
+
+enum AbsenceStatus {
+  pendente
+  aprovado
+  rejeitado
+}
+
+enum PermissionEffect {
+  grant
+  deny
+}
+
+enum AuditAction {
+  create
+  update
+  delete
+  login
+  login_failed
+  permission_change
+  swap_request
+  swap_response
 }
 
 model Tenant {
@@ -50,16 +103,22 @@ model Tenant {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  memberships   TenantMembership[]
-  clientes      Client[]
-  equipes       Team[]
-  colaboradores Collaborator[]
-  gestorEquipes ManagerTeam[]
-  escalas       Scale[]
+  memberships       TenantMembership[]
+  papeis            Role[]
+  overrides         UserPermissionOverride[]
+  clientes          Client[]
+  equipes           Team[]
+  colaboradores     Collaborator[]
+  gestorEquipes     ManagerTeam[]
+  escalas           Scale[]
   escalaAtribuicoes ScaleAssignment[]
-  escalaDetalhes ScaleDetail[]
-  plantoes      OnCall[]
-  ferias        Vacation[]
+  escalaDetalhes    ScaleDetail[]
+  plantoes          OnCall[]
+  turnos            Shift[]
+  trocas            ShiftSwap[]
+  ferias            Vacation[]
+  ausencias         Absence[]
+  auditoria         AuditLog[]
 
   @@map("tenants")
 }
@@ -77,10 +136,83 @@ model User {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  memberships   TenantMembership[]
-  gestorEquipes ManagerTeam[]
+  memberships       TenantMembership[]
+  gestorEquipes     ManagerTeam[]
+  overrides         UserPermissionOverride[]
+  auditoria         AuditLog[]
+  feriasSolicitadas Vacation[]              @relation("VacationRequester")
+  feriasRespondidas Vacation[]              @relation("VacationApprover")
+  ausenciasRespondidas Absence[]            @relation("AbsenceApprover")
+  trocasRespondidas ShiftSwap[]             @relation("SwapResponder")
 
   @@map("usuarios")
+}
+
+/// Catálogo global e imutável de permissões nomeadas da plataforma.
+model Permission {
+  id        Int    @id @default(autoincrement())
+  codigo    String @unique
+  descricao String
+  categoria String
+
+  roles     RolePermission[]
+  overrides UserPermissionOverride[]
+
+  @@index([categoria])
+  @@map("permissoes")
+}
+
+/// Papel (cargo). tenantId nulo = papel de sistema, disponível para todos os tenants.
+/// tenantId preenchido = papel customizado criado por aquele tenant.
+model Role {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int?     @map("tenant_id")
+  codigo    String
+  nome      String
+  descricao String
+  isSystem  Boolean  @default(false) @map("is_system")
+  ordem     Int      @default(100)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant?            @relation(fields: [tenantId], references: [id])
+  permissoes  RolePermission[]
+  memberships TenantMembership[]
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId])
+  @@map("papeis")
+}
+
+model RolePermission {
+  id           Int @id @default(autoincrement())
+  roleId       Int @map("role_id")
+  permissionId Int @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("papel_permissoes")
+}
+
+/// Concessão ou revogação pontual de uma permissão para um usuário dentro de um tenant.
+/// Sempre vence sobre o que o papel define.
+model UserPermissionOverride {
+  id           Int              @id @default(autoincrement())
+  userId       Int              @map("user_id")
+  tenantId     Int              @map("tenant_id")
+  permissionId Int              @map("permission_id")
+  efeito       PermissionEffect
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId, permissionId])
+  @@index([tenantId])
+  @@map("usuario_permissoes")
 }
 
 /// Vínculo de um usuário com um tenant + o papel que ele exerce ali.
@@ -89,13 +221,14 @@ model TenantMembership {
   id            Int      @id @default(autoincrement())
   userId        Int      @map("user_id")
   tenantId      Int      @map("tenant_id")
-  role          UserRole
+  roleId        Int      @map("role_id")
   colaboradorId Int?     @map("colaborador_id")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   user        User          @relation(fields: [userId], references: [id])
   tenant      Tenant        @relation(fields: [tenantId], references: [id])
+  role        Role          @relation(fields: [roleId], references: [id])
   colaborador Collaborator? @relation(fields: [colaboradorId], references: [id])
 
   @@unique([userId, tenantId])
@@ -104,64 +237,87 @@ model TenantMembership {
 }
 
 model Client {
-  id                    Int            @id @default(autoincrement())
-  tenantId              Int            @map("tenant_id")
-  nome                  String
-  idWhatsapp            String         @map("id_whatsapp")
-  escalation            String
-  responsavelInternoId  Int?           @map("responsavel_interno_id")
-  ativo                 Boolean        @default(true)
-  createdAt             DateTime       @default(now()) @map("created_at")
-  updatedAt             DateTime       @updatedAt @map("updated_at")
-  tenant                Tenant         @relation(fields: [tenantId], references: [id])
-  responsavelInterno    Collaborator?  @relation("ClientResponsible", fields: [responsavelInternoId], references: [id])
-  equipes               Team[]
-  escalas               Scale[]
-  plantoes              OnCall[]
+  id                   Int      @id @default(autoincrement())
+  tenantId             Int      @map("tenant_id")
+  nome                 String
+  razaoSocial          String?  @map("razao_social")
+  cnpj                 String?
+  idWhatsapp           String   @map("id_whatsapp")
+  escalation           String
+  telefone             String?
+  site                 String?
+  cep                  String?
+  logradouro           String?
+  numero               String?
+  complemento          String?
+  bairro               String?
+  cidade               String?
+  uf                   String?
+  slaMinutos           Int?     @map("sla_minutos")
+  observacoes          String?
+  responsavelInternoId Int?     @map("responsavel_interno_id")
+  ativo                Boolean  @default(true)
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  tenant             Tenant        @relation(fields: [tenantId], references: [id])
+  responsavelInterno Collaborator? @relation("ClientResponsible", fields: [responsavelInternoId], references: [id])
+  equipes            Team[]
+  escalas            Scale[]
+  plantoes           OnCall[]
+  turnos             Shift[]
 
   @@index([tenantId])
   @@map("clientes")
 }
 
 model Team {
-  id            Int               @id @default(autoincrement())
-  tenantId      Int               @map("tenant_id")
-  nome          String
-  clienteId     Int?              @map("cliente_id")
-  ativo         Boolean           @default(true)
-  createdAt     DateTime          @default(now()) @map("created_at")
-  updatedAt     DateTime          @updatedAt @map("updated_at")
-  tenant        Tenant            @relation(fields: [tenantId], references: [id])
-  cliente       Client?           @relation(fields: [clienteId], references: [id])
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @map("tenant_id")
+  nome      String
+  clienteId Int?     @map("cliente_id")
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  cliente       Client?        @relation(fields: [clienteId], references: [id])
   colaboradores Collaborator[]
   gestores      ManagerTeam[]
+  turnos        Shift[]
 
   @@index([tenantId])
   @@map("equipes")
 }
 
 model Collaborator {
-  id                    Int               @id @default(autoincrement())
-  tenantId              Int               @map("tenant_id")
-  nome                  String
-  email                 String
-  telefone              String
-  cargo                 String
-  equipeId              Int               @map("equipe_id")
-  tipoContrato          ContractType      @map("tipo_contrato")
-  modeloTrabalho        WorkModel         @map("modelo_trabalho")
-  fazPlantao            Boolean           @default(false) @map("faz_plantao")
-  sobreAviso            Boolean           @default(false) @map("sobre_aviso")
-  ativo                 Boolean           @default(true)
-  createdAt             DateTime          @default(now()) @map("created_at")
-  updatedAt             DateTime          @updatedAt @map("updated_at")
-  tenant                Tenant            @relation(fields: [tenantId], references: [id])
-  equipe                Team              @relation(fields: [equipeId], references: [id])
-  clientesResponsavel   Client[]          @relation("ClientResponsible")
-  memberships           TenantMembership[]
-  escalas               ScaleAssignment[]
-  plantoes              OnCall[]
-  ferias                Vacation[]
+  id             Int          @id @default(autoincrement())
+  tenantId       Int          @map("tenant_id")
+  nome           String
+  email          String
+  telefone       String
+  cargo          String
+  equipeId       Int          @map("equipe_id")
+  tipoContrato   ContractType @map("tipo_contrato")
+  modeloTrabalho WorkModel    @map("modelo_trabalho")
+  fazPlantao     Boolean      @default(false) @map("faz_plantao")
+  sobreAviso     Boolean      @default(false) @map("sobre_aviso")
+  ativo          Boolean      @default(true)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  tenant              Tenant             @relation(fields: [tenantId], references: [id])
+  equipe              Team               @relation(fields: [equipeId], references: [id])
+  clientesResponsavel Client[]           @relation("ClientResponsible")
+  memberships         TenantMembership[]
+  escalas             ScaleAssignment[]
+  plantoes            OnCall[]
+  ferias              Vacation[]
+  ausencias           Absence[]
+  turnos              Shift[]            @relation("ShiftOwner")
+  turnosOriginais     Shift[]            @relation("ShiftOriginalOwner")
+  trocasSolicitadas   ShiftSwap[]        @relation("SwapRequester")
+  trocasRecebidas     ShiftSwap[]        @relation("SwapTarget")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -169,13 +325,14 @@ model Collaborator {
 }
 
 model ManagerTeam {
-  id         Int      @id @default(autoincrement())
-  tenantId   Int      @map("tenant_id")
-  gestorId   Int      @map("gestor_id")
-  equipeId   Int      @map("equipe_id")
-  tenant     Tenant   @relation(fields: [tenantId], references: [id])
-  gestor     User     @relation(fields: [gestorId], references: [id])
-  equipe     Team     @relation(fields: [equipeId], references: [id])
+  id       Int @id @default(autoincrement())
+  tenantId Int @map("tenant_id")
+  gestorId Int @map("gestor_id")
+  equipeId Int @map("equipe_id")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  gestor User   @relation(fields: [gestorId], references: [id])
+  equipe Team   @relation(fields: [equipeId], references: [id])
 
   @@unique([gestorId, equipeId])
   @@index([tenantId])
@@ -183,79 +340,204 @@ model ManagerTeam {
 }
 
 model Scale {
-  id            Int               @id @default(autoincrement())
-  tenantId      Int               @map("tenant_id")
-  nome          String
-  tipo          ScaleType
-  descricao     String
-  clienteId     Int?              @map("cliente_id")
-  createdAt     DateTime          @default(now()) @map("created_at")
-  updatedAt     DateTime          @updatedAt @map("updated_at")
+  id        Int       @id @default(autoincrement())
+  tenantId  Int       @map("tenant_id")
+  nome      String
+  tipo      ScaleType
+  descricao String
+  clienteId Int?      @map("cliente_id")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
   tenant        Tenant            @relation(fields: [tenantId], references: [id])
   cliente       Client?           @relation(fields: [clienteId], references: [id])
   colaboradores ScaleAssignment[]
   detalhes      ScaleDetail[]
+  turnos        Shift[]
 
   @@index([tenantId])
   @@map("escalas")
 }
 
 model ScaleAssignment {
-  id              Int           @id @default(autoincrement())
-  tenantId        Int           @map("tenant_id")
-  colaboradorId   Int           @map("colaborador_id")
-  escalaId        Int           @map("escala_id")
-  dataInicio      DateTime      @map("data_inicio") @db.Date
-  dataFim         DateTime?     @map("data_fim") @db.Date
-  tenant          Tenant        @relation(fields: [tenantId], references: [id])
-  colaborador     Collaborator  @relation(fields: [colaboradorId], references: [id])
-  escala          Scale         @relation(fields: [escalaId], references: [id])
+  id            Int       @id @default(autoincrement())
+  tenantId      Int       @map("tenant_id")
+  colaboradorId Int       @map("colaborador_id")
+  escalaId      Int       @map("escala_id")
+  /// Posição na rotação: em 12x36 com 2 pessoas, ordem 0 e 1 se alternam.
+  ordem         Int       @default(0)
+  dataInicio    DateTime  @map("data_inicio") @db.Date
+  dataFim       DateTime? @map("data_fim") @db.Date
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  colaborador Collaborator @relation(fields: [colaboradorId], references: [id])
+  escala      Scale        @relation(fields: [escalaId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("escala_colaboradores")
 }
 
 model ScaleDetail {
-  id          Int       @id @default(autoincrement())
-  tenantId    Int       @map("tenant_id")
-  escalaId    Int       @map("escala_id")
-  diaSemana   Int       @map("dia_semana")
-  horaInicio  String    @map("hora_inicio")
-  horaFim     String    @map("hora_fim")
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-  escala      Scale     @relation(fields: [escalaId], references: [id])
+  id         Int    @id @default(autoincrement())
+  tenantId   Int    @map("tenant_id")
+  escalaId   Int    @map("escala_id")
+  diaSemana  Int    @map("dia_semana")
+  horaInicio String @map("hora_inicio")
+  horaFim    String @map("hora_fim")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  escala Scale  @relation(fields: [escalaId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("escala_detalhe")
 }
 
+/// Turno concreto: uma pessoa, um dia, um horário. É o que a operação enxerga
+/// no calendário e é a unidade que pode ser trocada entre colaboradores.
+model Shift {
+  id                    Int         @id @default(autoincrement())
+  tenantId              Int         @map("tenant_id")
+  colaboradorId         Int         @map("colaborador_id")
+  escalaId              Int?        @map("escala_id")
+  equipeId              Int?        @map("equipe_id")
+  clienteId             Int?        @map("cliente_id")
+  data                  DateTime    @db.Date
+  horaInicio            String      @map("hora_inicio")
+  horaFim               String      @map("hora_fim")
+  tipo                  ShiftType   @default(turno)
+  status                ShiftStatus @default(planejado)
+  observacao            String?
+  /// Quem estava escalado originalmente, quando o turno veio de uma troca aprovada.
+  colaboradorOriginalId Int?        @map("colaborador_original_id")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @updatedAt @map("updated_at")
+
+  tenant              Tenant        @relation(fields: [tenantId], references: [id])
+  colaborador         Collaborator  @relation("ShiftOwner", fields: [colaboradorId], references: [id])
+  colaboradorOriginal Collaborator? @relation("ShiftOriginalOwner", fields: [colaboradorOriginalId], references: [id])
+  escala              Scale?        @relation(fields: [escalaId], references: [id])
+  equipe              Team?         @relation(fields: [equipeId], references: [id])
+  cliente             Client?       @relation(fields: [clienteId], references: [id])
+  trocasComoOrigem    ShiftSwap[]   @relation("SwapOriginShift")
+  trocasComoDestino   ShiftSwap[]   @relation("SwapTargetShift")
+
+  @@unique([colaboradorId, data, horaInicio])
+  @@index([tenantId, data])
+  @@map("turnos")
+}
+
+/// Pedido de troca de turno entre dois colaboradores.
+/// tipo=troca: ambos trocam de dia (turno origem <-> turno destino).
+/// tipo=cobertura: o destinatário assume o turno de origem, sem contrapartida.
+model ShiftSwap {
+  id                Int        @id @default(autoincrement())
+  tenantId          Int        @map("tenant_id")
+  tipo              SwapType   @default(troca)
+  solicitanteId     Int        @map("solicitante_id")
+  destinatarioId    Int        @map("destinatario_id")
+  turnoOrigemId     Int        @map("turno_origem_id")
+  turnoDestinoId    Int?       @map("turno_destino_id")
+  motivo            String
+  status            SwapStatus @default(pendente)
+  respondidoPorId   Int?       @map("respondido_por_id")
+  respondidoEm      DateTime?  @map("respondido_em")
+  observacaoResposta String?   @map("observacao_resposta")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  solicitante   Collaborator @relation("SwapRequester", fields: [solicitanteId], references: [id])
+  destinatario  Collaborator @relation("SwapTarget", fields: [destinatarioId], references: [id])
+  turnoOrigem   Shift        @relation("SwapOriginShift", fields: [turnoOrigemId], references: [id], onDelete: Cascade)
+  turnoDestino  Shift?       @relation("SwapTargetShift", fields: [turnoDestinoId], references: [id], onDelete: Cascade)
+  respondidoPor User?        @relation("SwapResponder", fields: [respondidoPorId], references: [id])
+
+  @@index([tenantId, status])
+  @@map("turno_trocas")
+}
+
 model OnCall {
-  id              Int           @id @default(autoincrement())
-  tenantId        Int           @map("tenant_id")
-  colaboradorId   Int           @map("colaborador_id")
-  clienteId       Int?          @map("cliente_id")
-  data            DateTime      @db.Date
-  horaInicio      String        @map("hora_inicio")
-  horaFim         String        @map("hora_fim")
-  tipo            OnCallType
-  tenant          Tenant        @relation(fields: [tenantId], references: [id])
-  colaborador     Collaborator  @relation(fields: [colaboradorId], references: [id])
-  cliente         Client?       @relation(fields: [clienteId], references: [id])
+  id            Int        @id @default(autoincrement())
+  tenantId      Int        @map("tenant_id")
+  colaboradorId Int        @map("colaborador_id")
+  clienteId     Int?       @map("cliente_id")
+  data          DateTime   @db.Date
+  horaInicio    String     @map("hora_inicio")
+  horaFim       String     @map("hora_fim")
+  tipo          OnCallType
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  colaborador Collaborator @relation(fields: [colaboradorId], references: [id])
+  cliente     Client?      @relation(fields: [clienteId], references: [id])
 
   @@index([tenantId, data])
   @@map("plantoes")
 }
 
 model Vacation {
-  id              Int             @id @default(autoincrement())
-  tenantId        Int             @map("tenant_id")
-  colaboradorId   Int             @map("colaborador_id")
-  dataInicio      DateTime        @map("data_inicio") @db.Date
-  dataFim         DateTime        @map("data_fim") @db.Date
-  status          VacationStatus
-  tenant          Tenant          @relation(fields: [tenantId], references: [id])
-  colaborador     Collaborator    @relation(fields: [colaboradorId], references: [id])
+  id              Int            @id @default(autoincrement())
+  tenantId        Int            @map("tenant_id")
+  colaboradorId   Int            @map("colaborador_id")
+  dataInicio      DateTime       @map("data_inicio") @db.Date
+  dataFim         DateTime       @map("data_fim") @db.Date
+  status          VacationStatus @default(pendente)
+  observacao      String?
+  solicitadoPorId Int?           @map("solicitado_por_id")
+  respondidoPorId Int?           @map("respondido_por_id")
+  respondidoEm    DateTime?      @map("respondido_em")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  colaborador   Collaborator @relation(fields: [colaboradorId], references: [id])
+  solicitadoPor User?        @relation("VacationRequester", fields: [solicitadoPorId], references: [id])
+  respondidoPor User?        @relation("VacationApprover", fields: [respondidoPorId], references: [id])
 
   @@index([tenantId])
   @@map("ferias")
+}
+
+model Absence {
+  id              Int           @id @default(autoincrement())
+  tenantId        Int           @map("tenant_id")
+  colaboradorId   Int           @map("colaborador_id")
+  tipo            AbsenceType
+  dataInicio      DateTime      @map("data_inicio") @db.Date
+  dataFim         DateTime      @map("data_fim") @db.Date
+  motivo          String?
+  status          AbsenceStatus @default(pendente)
+  respondidoPorId Int?          @map("respondido_por_id")
+  respondidoEm    DateTime?     @map("respondido_em")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  colaborador   Collaborator @relation(fields: [colaboradorId], references: [id])
+  respondidoPor User?        @relation("AbsenceApprover", fields: [respondidoPorId], references: [id])
+
+  @@index([tenantId, dataInicio])
+  @@map("ausencias")
+}
+
+model AuditLog {
+  id          Int         @id @default(autoincrement())
+  tenantId    Int?        @map("tenant_id")
+  actorUserId Int?        @map("actor_user_id")
+  actorNome   String      @map("actor_nome")
+  acao        AuditAction
+  entidade    String
+  entidadeId  String?     @map("entidade_id")
+  descricao   String?
+  antes       Json?
+  depois      Json?
+  ip          String?
+  userAgent   String?     @map("user_agent")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
+  actor  User?   @relation(fields: [actorUserId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([entidade, entidadeId])
+  @@map("auditoria")
 }
