@@ -25,6 +25,33 @@ export const teamRepository = {
     if (membership?.colaborador?.equipeId != null) ids.add(membership.colaborador.equipeId);
     return [...ids];
   },
+  findManagers(tenantId: number, equipeId: number) {
+    return prisma.managerTeam.findMany({
+      where: { tenantId, equipeId },
+      include: { gestor: { select: { id: true, nome: true, email: true } } },
+      orderBy: { gestor: { nome: 'asc' } },
+    });
+  },
+
+  /**
+   * Substitui o conjunto de responsáveis pela equipe.
+   *
+   * Substituição, e não adição incremental, porque é assim que a tela pensa:
+   * marca-se quem responde e salva. Numa transação para que nunca exista o
+   * instante em que a equipe ficou sem responsável nenhum por conta de uma
+   * falha no meio — esse instante seria o suficiente para uma varredura
+   * concorrente não notificar ninguém.
+   */
+  replaceManagers(tenantId: number, equipeId: number, gestorIds: number[]) {
+    return prisma.$transaction([
+      prisma.managerTeam.deleteMany({ where: { tenantId, equipeId } }),
+      prisma.managerTeam.createMany({
+        data: gestorIds.map((gestorId) => ({ tenantId, equipeId, gestorId })),
+        skipDuplicates: true,
+      }),
+    ]);
+  },
+
   findByIds(tenantId: number, teamIds: number[]) {
     return prisma.team.findMany({
       where: { tenantId, id: { in: teamIds } },

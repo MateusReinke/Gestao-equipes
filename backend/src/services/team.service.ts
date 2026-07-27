@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { JwtPayload } from '../types/auth';
 import { teamRepository } from '../repositories/team.repository';
 import { clientRepository } from '../repositories/client.repository';
+import { userRepository } from '../repositories/user.repository';
 import { getVisibleTeamIds } from './scope.service';
 
 export const teamSchema = z.object({
@@ -80,6 +81,55 @@ export async function deleteTeam(teamId: number, user?: JwtPayload) {
 
   await teamRepository.remove(tenantId, teamId);
   return existing;
+}
+
+export class InvalidManagerError extends Error {
+  constructor(message: string, readonly idsInvalidos: number[]) {
+    super(message);
+  }
+}
+
+export const teamManagersSchema = z.object({
+  gestorIds: z.array(z.coerce.number().int().positive()).max(50),
+});
+
+export type TeamManagersInput = z.infer<typeof teamManagersSchema>;
+
+export function listTeamManagers(teamId: number, user?: JwtPayload) {
+  const tenantId = requireTenant(user);
+  return teamRepository.findManagers(tenantId, teamId);
+}
+
+/**
+ * Define quem responde pela equipe.
+ *
+ * Não é só um rótulo: o vínculo é o que faz `getVisibleTeamIds` abrir a equipe
+ * para quem não administra a empresa (é o que torna o papel Líder utilizável) e
+ * o que endereça os alertas de férias. Por isso a validação é estrita — aceitar
+ * um id de usuário de outra empresa aqui seria conceder acesso aos dados desta.
+ *
+ * Substitui o conjunto inteiro: a tela marca quem responde e salva.
+ */
+export async function setTeamManagers(teamId: number, data: TeamManagersInput, user?: JwtPayload) {
+  const tenantId = requireTenant(user);
+
+  const equipe = await teamRepository.findById(tenantId, teamId);
+  if (!equipe) throw new TeamNotFoundError('Equipe não encontrada');
+
+  // O mesmo usuário marcado duas vezes é erro de tela, não do usuário.
+  const desejados = [...new Set(data.gestorIds)];
+  const validos = await userRepository.findActiveMemberIds(tenantId, desejados);
+
+  const invalidos = desejados.filter((id) => !validos.includes(id));
+  if (invalidos.length > 0) {
+    throw new InvalidManagerError(
+      'Só é possível designar usuários ativos desta empresa como responsáveis pela equipe.',
+      invalidos
+    );
+  }
+
+  await teamRepository.replaceManagers(tenantId, teamId, validos);
+  return teamRepository.findManagers(tenantId, teamId);
 }
 
 export async function updateTeam(teamId: number, data: TeamUpdateInput, user?: JwtPayload) {

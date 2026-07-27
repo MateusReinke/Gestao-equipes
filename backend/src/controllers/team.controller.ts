@@ -10,6 +10,10 @@ import {
   TeamNotFoundError,
   deleteTeam,
   TeamHasHistoryError,
+  InvalidManagerError,
+  listTeamManagers,
+  setTeamManagers,
+  teamManagersSchema,
 } from '../services/team.service';
 import { auditFromRequest } from '../services/audit.service';
 
@@ -17,6 +21,7 @@ function handleError(error: unknown, res: Response) {
   if (error instanceof NoActiveTenantError) return res.status(409).json({ error: error.message });
   if (error instanceof TeamNotFoundError) return res.status(404).json({ error: error.message });
   if (error instanceof ClientNotFoundForTeamError) return res.status(400).json({ error: error.message });
+  if (error instanceof InvalidManagerError) return res.status(400).json({ error: error.message, idsInvalidos: error.idsInvalidos });
   // 409: o pedido faz sentido, mas o estado atual impede — a mensagem diz o
   // que segura e qual é a saída (desativar).
   if (error instanceof TeamHasHistoryError) return res.status(409).json({ error: error.message, detalhes: error.detalhes });
@@ -63,6 +68,42 @@ export const teamController = {
         descricao: `Editou a equipe "${depois?.nome}"`,
         antes,
         depois,
+      });
+      return res.json(depois);
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async managers(req: Request, res: Response) {
+    try {
+      return res.json(await listTeamManagers(Number(req.params.id), req.user));
+    } catch (error) {
+      return handleError(error, res);
+    }
+  },
+
+  async setManagers(req: Request, res: Response) {
+    const parsed = teamManagersSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos', issues: parsed.error.flatten().fieldErrors });
+    }
+    try {
+      const antes = await listTeamManagers(Number(req.params.id), req.user);
+      const depois = await setTeamManagers(Number(req.params.id), parsed.data, req.user);
+
+      // Vale auditoria como mudança de permissão, e não como edição de equipe:
+      // o vínculo abre a visibilidade da equipe para quem não administra.
+      await auditFromRequest(req, {
+        acao: 'permission_change',
+        entidade: 'equipe_responsaveis',
+        entidadeId: req.params.id,
+        descricao:
+          depois.length === 0
+            ? 'Removeu todos os responsáveis pela equipe'
+            : `Definiu como responsáveis pela equipe: ${depois.map((item) => item.gestor.nome).join(', ')}`,
+        antes: antes.map((item) => item.gestor),
+        depois: depois.map((item) => item.gestor),
       });
       return res.json(depois);
     } catch (error) {

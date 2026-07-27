@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, TriangleAlert } from 'lucide-react';
 import { Badge, Button, Card } from '@/components/ui';
 import { DeleteButton } from '@/components/delete-button';
 import { TeamForm } from './team-form';
+import { ManagersPanel, type UsuarioDaEmpresa } from './managers-panel';
 
 type Team = {
   id: number;
@@ -20,11 +21,15 @@ type Client = { id: number; nome: string };
 export function TeamCard({
   team,
   clients,
+  usuarios,
+  podeListarUsuarios,
   podeEditar,
   podeRemover,
 }: {
   team: Team;
   clients: Client[];
+  usuarios: UsuarioDaEmpresa[];
+  podeListarUsuarios: boolean;
   podeEditar: boolean;
   podeRemover: boolean;
 }) {
@@ -51,9 +56,19 @@ export function TeamCard({
 
       <p className="mt-1 text-xs text-ink-muted">{team.cliente?.nome ?? 'Estrutura interna'}</p>
 
+      {/* Equipe sem responsável não é detalhe estético: ninguém a enxerga fora
+          de quem administra a empresa, e os alertas de férias dela não têm
+          destinatário. Vale dizer isso, não omitir a linha. */}
       {team.gestores.length > 0 ? (
-        <p className="mt-2 text-xs text-ink-subtle">Gestão: {team.gestores.map((item) => item.gestor.nome).join(', ')}</p>
-      ) : null}
+        <p className="mt-2 text-xs text-ink-subtle">
+          Responsáveis: {team.gestores.map((item) => item.gestor.nome).join(', ')}
+        </p>
+      ) : (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-warn">
+          <TriangleAlert size={13} className="shrink-0" />
+          Sem responsável definido
+        </p>
+      )}
 
       <div className="mt-4 flex-1 border-t border-line pt-3">
         <p className="eyebrow mb-2">
@@ -75,6 +90,15 @@ export function TeamCard({
 
       {podeEditar || podeRemover ? (
         <div className="mt-3 flex flex-wrap items-center justify-end gap-1 border-t border-line pt-3">
+          {podeEditar ? (
+            <ManagersPanel
+              equipeId={team.id}
+              equipeNome={team.nome}
+              atuais={team.gestores}
+              usuarios={usuarios}
+              podeListarUsuarios={podeListarUsuarios}
+            />
+          ) : null}
           {podeEditar ? (
             <Button variant="ghost" size="sm" onClick={() => setEditando(true)}>
               <Pencil size={14} /> Editar

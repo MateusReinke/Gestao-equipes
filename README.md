@@ -61,6 +61,24 @@ permissões efetivas = (∪ permissões dos papéis) + grants − denies
 
 A proteção é em três camadas: o menu só mostra o que a pessoa pode acessar, a rota do frontend redireciona quem não tem permissão, e a API bloqueia de qualquer forma.
 
+### Responsáveis pela equipe
+
+Quem responde por uma equipe não é rótulo: o vínculo (`gestor_equipes`) é o que
+faz `getVisibleTeamIds` abrir a equipe para quem **não** administra a empresa —
+é o que torna o papel Líder utilizável — e é para onde vão os alertas de férias
+do time.
+
+Define-se em **Equipes > Responsáveis**, marcando entre os usuários da empresa.
+A validação é estrita: só usuário ativo com vínculo nesta empresa, porque
+designar alguém concede acesso aos dados dela. Um id de fora é recusado com
+`400` e nada é gravado — designação parcial silenciosa seria pior que o erro.
+
+Fica sob `team.edit` por ser ato de organizar a operação, mas a auditoria o
+registra como `permission_change`, que é o que ele de fato é.
+
+Equipe sem responsável aparece marcada na lista: ninguém a enxerga fora de quem
+administra a empresa, e os alertas de férias dela não têm destinatário.
+
 ## Escalas e turnos
 
 O modelo separa **regra** de **execução**:
@@ -142,7 +160,23 @@ O horizonte é generoso de propósito. Numa operação 24×7, avisar 30 dias ant
 
 ### Notificações
 
-Chegam no sino do cabeçalho, para os gestores das equipes envolvidas. São **idempotentes por construção**: a chave identifica o fato (colaborador + ciclo + severidade), não o instante. A varredura pode rodar quantas vezes for preciso — inclusive em duas instâncias ao mesmo tempo — sem duplicar aviso. Mudar de severidade gera chave nova, que é o comportamento desejado: o agravamento merece um aviso novo.
+Chegam no sino do cabeçalho, em dois alcances distintos:
+
+| Quem | Recebe | Como se define |
+| --- | --- | --- |
+| **Responsável pela equipe** | só do time dele | Equipes > Responsáveis |
+| **RH** | de toda a empresa | permissão `hr.vacation.watch_all` |
+
+A permissão do RH é separada de `hr.vacation.approve` de propósito: aprovar
+férias e acompanhar o vencimento da empresa inteira são funções diferentes, e
+`approve` é de Administrador **e** Gestor — usá-la faria todo gestor receber
+alerta de gente que não é dele. Por padrão só o Administrador da Empresa a tem;
+um papel de RH customizado ou um override individual estendem para quem precisa.
+
+Ninguém mais é varrido: alerta que chega a quem não pode agir vira ruído, e
+ruído faz o próximo alerta de verdade passar batido.
+
+São **idempotentes por construção**: a chave identifica o fato (colaborador + ciclo + severidade), não o instante. A varredura pode rodar quantas vezes for preciso — inclusive em duas instâncias ao mesmo tempo — sem duplicar aviso. Mudar de severidade gera chave nova, que é o comportamento desejado: o agravamento merece um aviso novo.
 
 Envio por e-mail ainda não existe; o modelo já está preparado para recebê-lo.
 
@@ -189,6 +223,7 @@ O recorte é o mesmo do resto do sistema: você só exporta as equipes que já e
 - **CORS fechado por padrão.** O navegador nunca fala com a API direto — o frontend usa Server Components e um proxy server-side. Nenhuma origem é liberada a menos que `CORS_ORIGINS` diga o contrário.
 - **Rate limit.** 10 tentativas de login por IP a cada 5 minutos (login bem-sucedido não gasta cota), 60/min no wallboard público — é o que impede adivinhar o token do link —, 10/min no teste de conexão do diretório, porque cada chamada gasta a cota que a Microsoft mede no tenant do cliente, e 300/min no restante da API.
 - **CSRF.** As rotas `/api/*` do Next são autenticadas por cookie httpOnly, e o navegador o anexa sozinho até numa requisição vinda de outro site. Além do `SameSite=lax`, toda mudança de estado confere a origem e responde 403 quando ela não bate.
+- **Hash de senha nunca sai da API.** As consultas de vínculo selecionam campos explícitos do usuário; só o login lê `senhaHash`, e ele não devolve o registro. Antes, `include: { user: true }` fazia o hash da senha de um usuário recém-convidado voltar no corpo da resposta.
 - **Sessão.** Token em cookie `httpOnly`, `secure` em produção, expirando em 12h. As permissões efetivas são buscadas do backend a cada requisição — nunca lidas do cookie, que o cliente poderia editar.
 - **Corpo limitado** a 256 KB, e `trust proxy` configurado para que rate limit e auditoria vejam o IP real atrás do Coolify.
 
@@ -311,7 +346,7 @@ Ainda não entregue: carga das pessoas, sincronização incremental por delta, a
 | **Trocas** | Fluxo completo de solicitação → aceite → aprovação. |
 | **Escalas** | Regras de revezamento com faixas de horário e ordem da rotação. |
 | **Clientes** | Cadastro completo com CNPJ/CEP, SLA, escalation e responsável interno — criar, editar e remover. |
-| **Equipes / Colaboradores** | Estrutura da operação e disponibilidade para plantão/sobreaviso, com edição e remoção protegida por histórico. |
+| **Equipes / Colaboradores** | Estrutura da operação, responsáveis por equipe e disponibilidade para plantão/sobreaviso, com edição e remoção protegida por histórico. |
 | **Férias e ausências** | Solicitação e aprovação; períodos aprovados viram conflito na geração de turnos. |
 | **Controle de férias** | Ciclos aquisitivo/concessivo por pessoa, saldo, prazo e alertas de vencimento pela CLT. |
 | **Usuários e papéis** | Gestão de acesso, atribuição de papéis e criação de papéis customizados. |
@@ -345,7 +380,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 cd backend && npm test
 ```
 
-297 testes cobrindo:
+315 testes cobrindo:
 
 - **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
 - **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
@@ -359,6 +394,8 @@ cd backend && npm test
 - **Consulta de CNPJ/CEP:** dígitos verificadores, campos que chegam como número, logradouro partido em tipo + nome, telefone só com dígitos, fallback por tempo esgotado / limite de consultas / resposta vazia, 404 tratado como definitivo e o payload real de produção mapeado campo a campo.
 - **Exclusão protegida:** equipe e colaborador com histórico recusados com o motivo detalhado, e apagados quando realmente não deixam órfão.
 - **Férias pela CLT:** montagem dos ciclos com admissão em fim de mês e em 29 de fevereiro, tabela de faltas nas bordas exatas, abono de um terço, fracionamento válido e inválido, saldo que nunca fica negativo, e classificação de férias antigas pelo período concessivo.
+- **Responsáveis por equipe:** usuário de outra empresa recusado sem gravar nada (é o vínculo que abre visibilidade), usuário inativo recusado, duplicata removida antes da unique do banco, lista vazia limpando os responsáveis e o retorno vindo do estado gravado, não do que foi enviado.
+- **Destinatários dos alertas:** equipe sem responsável gera alerta que não vai a ninguém, responsável de uma equipe não recebe da outra, RH recebe de todas inclusive das sem responsável, quem é as duas coisas recebe uma notificação só, e a consulta usa a permissão dedicada e não a de aprovar férias.
 - **Alertas de prazo:** transição entre os quatro estados nos dias exatos do horizonte, um alerta por ciclo (o mais grave), chave de idempotência estável entre execuções e nova quando a severidade muda.
 - **Validação de CPF:** dígitos verificadores, máscara, sequências repetidas e o caso em que o resto do cálculo é 10.
 - **Cifragem do diretório:** ida e volta, pacote diferente a cada gravação, recusa com contexto de outra empresa, texto e tag adulterados, versão desconhecida, e as três formas de chave (hex, base64 e frase derivada) — inclusive a exigência de a derivação abrir, depois de um restart, o que foi gravado antes.

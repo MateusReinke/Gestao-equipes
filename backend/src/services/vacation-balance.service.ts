@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { JwtPayload } from '../types/auth';
+import { PERMISSIONS } from '../types/permissions';
 import { hrRepository, notificationRepository } from '../repositories/hr.repository';
 import { getVisibleTeamIds } from './scope.service';
 import { eachDay, toDateOnly } from '../utils/date';
@@ -164,9 +165,15 @@ export async function registrarAjuste(data: AjusteInput, user?: JwtPayload) {
  * severidade), então rodar duas vezes no mesmo dia — ou em duas instâncias —
  * não duplica nada.
  *
- * Destinatários: os gestores das equipes envolvidas. Quem administra a empresa
- * recebe pela própria gestão de equipe; não varremos todos os usuários para
- * não transformar o alerta em ruído.
+ * Destinatários, em dois alcances distintos:
+ *
+ * - **Responsáveis pela equipe** (`gestor_equipes`) recebem o que é da equipe
+ *   deles. É o alcance que lhes cabe, e o que mantém o alerta acionável.
+ * - **RH** (`hr.vacation.watch_all`) recebe de todo mundo, porque acompanhar o
+ *   passivo de férias da empresa é justamente a função.
+ *
+ * Ninguém mais é varrido: alerta que chega a quem não pode agir vira ruído, e
+ * ruído faz o próximo alerta de verdade passar batido.
  */
 export async function varrerAlertasDeFerias(params: {
   tenantId: number;
@@ -183,7 +190,11 @@ export async function varrerAlertasDeFerias(params: {
     faltasPorColaborador.set(falta.colaboradorId, [...(faltasPorColaborador.get(falta.colaboradorId) ?? []), ...dias]);
   }
 
-  const gestores = await notificationRepository.gestoresDasEquipes(params.tenantId, params.teamIds);
+  const [gestores, rh] = await Promise.all([
+    notificationRepository.gestoresDasEquipes(params.tenantId, params.teamIds),
+    notificationRepository.usuariosComPermissao(params.tenantId, PERMISSIONS.HR_VACATION_WATCH_ALL),
+  ]);
+
   const gestoresPorEquipe = new Map<number, number[]>();
   for (const item of gestores) {
     gestoresPorEquipe.set(item.equipeId, [...(gestoresPorEquipe.get(item.equipeId) ?? []), item.gestorId]);
@@ -220,7 +231,9 @@ export async function varrerAlertasDeFerias(params: {
     });
     totalAlertas += alertas.length;
 
-    const destinatarios = new Set(gestoresPorEquipe.get(colaborador.equipe?.id ?? -1) ?? []);
+    // O Set faz o trabalho de quem é as duas coisas: um responsável de equipe
+    // que também é RH recebe uma notificação, não duas.
+    const destinatarios = new Set([...(gestoresPorEquipe.get(colaborador.equipe?.id ?? -1) ?? []), ...rh]);
     for (const alerta of alertas) {
       for (const destinatarioId of destinatarios) {
         aEmitir.push({

@@ -139,4 +139,39 @@ export const notificationRepository = {
       select: { gestorId: true, equipeId: true },
     });
   },
+
+  /**
+   * Quem tem uma permissão nomeada dentro da empresa.
+   *
+   * É `getEffectivePermissions` ao contrário: em vez de "o que este usuário
+   * pode", responde "quem pode isto". Serve para descobrir o RH — quem
+   * acompanha férias da empresa toda, independentemente de gerenciar equipe.
+   *
+   * Os overrides individuais valem aqui pela mesma razão que valem lá: são o
+   * que permite incluir uma pessoa do RH sem inventar um papel para ela, ou
+   * tirar alguém que herdou a permissão do papel e não quer o alerta.
+   */
+  async usuariosComPermissao(tenantId: number, codigo: string): Promise<number[]> {
+    const [porPapel, overrides] = await Promise.all([
+      prisma.tenantMembership.findMany({
+        where: {
+          tenantId,
+          user: { ativo: true },
+          role: { permissoes: { some: { permission: { codigo } } } },
+        },
+        select: { userId: true },
+      }),
+      prisma.userPermissionOverride.findMany({
+        where: { tenantId, permission: { codigo }, user: { ativo: true } },
+        select: { userId: true, efeito: true },
+      }),
+    ]);
+
+    const ids = new Set(porPapel.map((item) => item.userId));
+    for (const override of overrides) {
+      if (override.efeito === 'grant') ids.add(override.userId);
+      else ids.delete(override.userId);
+    }
+    return [...ids];
+  },
 };

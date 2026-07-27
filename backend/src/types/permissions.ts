@@ -43,6 +43,9 @@ export const PERMISSIONS = {
   HR_ABSENCE_MANAGE: 'hr.absence.manage',
   HR_VACATION_ADJUST: 'hr.vacation.adjust',
   HR_EMPLOYEE_MANAGE: 'hr.employee.manage',
+  /// Separada de `approve` de propósito: aprovar férias e acompanhar o
+  /// vencimento de toda a empresa são papéis diferentes.
+  HR_VACATION_WATCH_ALL: 'hr.vacation.watch_all',
 
   USER_VIEW: 'user.view',
   USER_INVITE: 'user.invite',

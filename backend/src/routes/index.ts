@@ -78,6 +78,11 @@ router.get('/api/equipes', auth(), requirePermission(P.TEAM_VIEW), asyncHandler(
 router.post('/api/equipes', auth(), requirePermission(P.TEAM_CREATE), asyncHandler(teamController.create));
 router.patch('/api/equipes/:id', auth(), requirePermission(P.TEAM_EDIT), asyncHandler(teamController.update));
 router.delete('/api/equipes/:id', auth(), requirePermission(P.TEAM_DELETE), asyncHandler(teamController.remove));
+// Responsáveis pela equipe. Fica sob `team.edit` porque é ato de organizar a
+// operação — mas abre visibilidade, e por isso a auditoria o registra como
+// mudança de permissão, não como edição de cadastro.
+router.get('/api/equipes/:id/gestores', auth(), requirePermission(P.TEAM_VIEW), asyncHandler(teamController.managers));
+router.put('/api/equipes/:id/gestores', auth(), requirePermission(P.TEAM_EDIT), asyncHandler(teamController.setManagers));
 
 // ---------- Colaboradores ----------
 router.get('/api/colaboradores', auth(), requirePermission(P.COLLABORATOR_VIEW), asyncHandler(collaboratorController.list));
