@@ -12,7 +12,8 @@ Plataforma **SaaS multi-tenant** para operações de monitoramento (NOC/Observab
 ## Subida em produção
 
 1. Copie `.env.example` para `.env` e defina um `JWT_SECRET` forte (`openssl rand -hex 32`). O backend recusa subir sem essa variável.
-2. Suba os containers:
+2. Para usar o módulo de diretório, defina também `ENABLE_ENTRA_SYNC=true` e `DIRECTORY_ENCRYPTION_KEY` (`openssl rand -base64 32`).
+3. Suba os containers:
 
 ```bash
 docker-compose up -d --build
@@ -186,7 +187,7 @@ O recorte é o mesmo do resto do sistema: você só exporta as equipes que já e
 
 - **Cabeçalhos.** `helmet` no backend e cabeçalhos explícitos no Next: `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` e `Permissions-Policy`. Nenhum dos dois anuncia a tecnologia que roda por baixo.
 - **CORS fechado por padrão.** O navegador nunca fala com a API direto — o frontend usa Server Components e um proxy server-side. Nenhuma origem é liberada a menos que `CORS_ORIGINS` diga o contrário.
-- **Rate limit.** 10 tentativas de login por IP a cada 5 minutos (login bem-sucedido não gasta cota), 60/min no wallboard público — é o que impede adivinhar o token do link — e 300/min no restante da API.
+- **Rate limit.** 10 tentativas de login por IP a cada 5 minutos (login bem-sucedido não gasta cota), 60/min no wallboard público — é o que impede adivinhar o token do link —, 10/min no teste de conexão do diretório, porque cada chamada gasta a cota que a Microsoft mede no tenant do cliente, e 300/min no restante da API.
 - **CSRF.** As rotas `/api/*` do Next são autenticadas por cookie httpOnly, e o navegador o anexa sozinho até numa requisição vinda de outro site. Além do `SameSite=lax`, toda mudança de estado confere a origem e responde 403 quando ela não bate.
 - **Sessão.** Token em cookie `httpOnly`, `secure` em produção, expirando em 12h. As permissões efetivas são buscadas do backend a cada requisição — nunca lidas do cookie, que o cliente poderia editar.
 - **Corpo limitado** a 256 KB, e `trust proxy` configurado para que rate limit e auditoria vejam o IP real atrás do Coolify.
@@ -296,6 +297,8 @@ Configurar credencial é separado de ver o diretório de propósito: o Gestor ac
 
 Entregue: schema do espelho, conexão por empresa com segredo cifrado, contrato `DirectoryProvider` (com o Entra como primeira implementação), cliente Graph com `Retry-After` honrado e tradução de erro, e o teste de conexão.
 
+Remover uma conexão apaga o espelho em cascata — é réplica, e uma nova sincronização traz tudo de volta. Já uma conexão com pessoas vinculadas a colaboradores responde **409** com a contagem, porque vínculo é decisão de gente: para só parar de sincronizar, desative a conexão.
+
 Ainda não entregue: carga das pessoas, sincronização incremental por delta, agendador, reconciliação com o cadastro, grupos, organograma e fotos.
 
 ## Módulos
@@ -342,7 +345,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 cd backend && npm test
 ```
 
-285 testes cobrindo:
+297 testes cobrindo:
 
 - **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
 - **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
@@ -362,4 +365,5 @@ cd backend && npm test
 - **Cliente Graph:** reaproveitamento do token, tradução dos códigos AADSTS, `Retry-After` em segundos e em formato de data, 401 que descarta o token e repete, repetição em erro de servidor e 400 que não é repetido.
 - **Teste de conexão:** permissão obrigatória ausente reprova, opcional ausente não reprova, credencial recusada nem chega a verificar permissão, e cada recurso verificado em separado.
 - **Conexão de diretório:** segredo nunca sai na resposta, domínio recusado no lugar do GUID, criação automática barrada sem equipe de entrada, edição sem segredo preserva o guardado, troca de credencial invalida o teste anterior e remoção segurada por vínculo com colaborador.
+- **Rotas do diretório:** com o módulo desligado, listar/criar/testar respondem 503 com a instrução — e não 200 vazio, que sugeriria "está ligado, só não configurado" —, a guarda de sessão vem antes da de habilitação para que ninguém descubra sem se autenticar se a empresa usa diretório, e o 503 precede a validação do corpo.
 - **Fronteira diretório/operação:** nenhum arquivo do módulo importa repositório operacional fora da lista declarada, provedores não importam Prisma como valor, e o repositório do módulo só lê de tabela operacional.

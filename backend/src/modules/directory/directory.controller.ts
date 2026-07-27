@@ -15,6 +15,7 @@ import {
   conexaoSchema,
   conexaoUpdateSchema,
   criarConexao,
+  exigirModuloHabilitado,
   listarConexoes,
   removerConexao,
   testarConexao,
@@ -58,12 +59,16 @@ export const directoryController = {
   },
 
   async create(req: Request, res: Response) {
-    const parsed = conexaoSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: 'Dados inválidos', issues: parsed.error.flatten().fieldErrors });
-    }
-
     try {
+      // Antes do parse: o estado do módulo é a resposta mais útil quando ele
+      // está desligado, e não a forma do corpo que ninguém vai processar.
+      exigirModuloHabilitado();
+
+      const parsed = conexaoSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos', issues: parsed.error.flatten().fieldErrors });
+      }
+
       const conexao = await criarConexao(parsed.data, req.user);
       await auditFromRequest(req, {
         acao: 'create',
@@ -81,12 +86,14 @@ export const directoryController = {
   },
 
   async update(req: Request, res: Response) {
-    const parsed = conexaoUpdateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: 'Dados inválidos', issues: parsed.error.flatten().fieldErrors });
-    }
-
     try {
+      exigirModuloHabilitado();
+
+      const parsed = conexaoUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos', issues: parsed.error.flatten().fieldErrors });
+      }
+
       const conexao = await atualizarConexao(Number(req.params.id), parsed.data, req.user);
       await auditFromRequest(req, {
         acao: 'update',
@@ -120,15 +127,17 @@ export const directoryController = {
   },
 
   async test(req: Request, res: Response) {
-    const parsed = testeSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({ error: 'Dados inválidos', issues: parsed.error.flatten().fieldErrors });
-    }
-
-    const { clientSecret, ...dados } = parsed.data;
-    const id = req.params.id ? Number(req.params.id) : null;
-
     try {
+      exigirModuloHabilitado();
+
+      const parsed = testeSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos', issues: parsed.error.flatten().fieldErrors });
+      }
+
+      const { clientSecret, ...dados } = parsed.data;
+      const id = req.params.id ? Number(req.params.id) : null;
+
       const resultado = await testarConexao(id, clientSecret, dados, req.user);
       return res.json(resultado);
     } catch (error) {

@@ -28,9 +28,34 @@ services:
       APP_PORT: ${APP_PORT:-4000}
       NODE_ENV: ${NODE_ENV:-production}
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env antes de subir o backend}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
       SEED_ON_BOOT: ${SEED_ON_BOOT:-false}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@gestao.local}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Admin@123}
+      # Diretório (Entra ID). O container só enxerga o que está listado aqui:
+      # não há `env_file`, e o entrypoint não carrega .env. Variável documentada
+      # no .env.example mas ausente desta lista é configuração morta.
+      ENABLE_ENTRA_SYNC: ${ENABLE_ENTRA_SYNC:-false}
+      DIRECTORY_ENCRYPTION_KEY: ${DIRECTORY_ENCRYPTION_KEY:-}
+      GRAPH_API_BASE_URL: ${GRAPH_API_BASE_URL:-https://graph.microsoft.com}
+      GRAPH_API_VERSION: ${GRAPH_API_VERSION:-v1.0}
+      ENTRA_AUTHORITY_URL: ${ENTRA_AUTHORITY_URL:-https://login.microsoftonline.com}
+      SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-60}
+      SYNC_USERS: ${SYNC_USERS:-true}
+      SYNC_DEPARTMENTS: ${SYNC_DEPARTMENTS:-true}
+      SYNC_JOB_TITLES: ${SYNC_JOB_TITLES:-true}
+      SYNC_MANAGERS: ${SYNC_MANAGERS:-true}
+      SYNC_PHOTOS: ${SYNC_PHOTOS:-false}
+      SYNC_GROUPS: ${SYNC_GROUPS:-false}
+      SYNC_DISABLED_USERS: ${SYNC_DISABLED_USERS:-true}
+      # As duas únicas flags que alcançam dado operacional — desligadas por padrão.
+      AUTO_CREATE_USERS: ${AUTO_CREATE_USERS:-false}
+      AUTO_DISABLE_USERS: ${AUTO_DISABLE_USERS:-false}
+      LOG_SYNC_OPERATIONS: ${LOG_SYNC_OPERATIONS:-true}
+      FULL_SYNC_ON_FIRST_RUN: ${FULL_SYNC_ON_FIRST_RUN:-true}
+      DEFAULT_COUNTRY: ${DEFAULT_COUNTRY:-BR}
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-America/Sao_Paulo}
+      DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-pt-BR}
     ports:
       - "${BACKEND_PORT:-54000}:4000"
     depends_on:

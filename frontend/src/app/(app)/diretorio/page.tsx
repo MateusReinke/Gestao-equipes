@@ -116,7 +116,9 @@ export default async function DiretorioPage() {
       ) : null}
 
       {podeConfigurar ? (
-        <ConnectionForm conexao={conexao} equipes={equipesResult.data} />
+        /* A chave força remontagem quando a conexão deixa de existir: sem ela o
+           formulário manteria o estado local da conexão recém-removida. */
+        <ConnectionForm key={conexao?.id ?? 'nova'} conexao={conexao} equipes={equipesResult.data} />
       ) : conexao ? (
         <Card>
           <CardBody>

@@ -31,6 +31,23 @@ export const publicRateLimit = rateLimit({
   message: mensagem('Muitas requisições. Aguarde um instante.'),
 });
 
+/**
+ * Rotas que saem para um serviço de terceiro por requisição.
+ *
+ * O teste de conexão do diretório chama o Entra ID a cada clique, e a Microsoft
+ * mede a cota POR APLICAÇÃO — quem gastaria com um loop nesse botão é o tenant
+ * do cliente, não a nossa API. O teto geral de 300/min é folgado demais para
+ * isso; dez tentativas por minuto sobram para configurar uma App Registration
+ * e não chegam perto de arranhar o limite do provedor.
+ */
+export const externalCallRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: mensagem('Muitos testes seguidos. Aguarde um minuto — o provedor de identidade também limita as tentativas.'),
+});
+
 /// Teto geral da API autenticada. Folgado o bastante para não incomodar o uso
 /// normal (a tela dispara várias chamadas por página), apertado o bastante para
 /// conter varredura automatizada.

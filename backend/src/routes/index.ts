@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { auth } from '../middleware/auth';
 import { requirePermission } from '../middleware/requirePermission';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { loginRateLimit, publicRateLimit } from '../middleware/rateLimit';
+import { externalCallRateLimit, loginRateLimit, publicRateLimit } from '../middleware/rateLimit';
 import { PERMISSIONS as P } from '../types/permissions';
 import { authController } from '../controllers/auth.controller';
 import { dashboardController } from '../controllers/dashboard.controller';
@@ -154,8 +154,10 @@ router.get('/api/diretorio/conexoes', auth(), requirePermission(P.DIRECTORY_VIEW
 router.post('/api/diretorio/conexoes', auth(), requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.create));
 router.patch('/api/diretorio/conexoes/:id', auth(), requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.update));
 router.delete('/api/diretorio/conexoes/:id', auth(), requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.remove));
-router.post('/api/diretorio/conexoes/testar', auth(), requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.test));
-router.post('/api/diretorio/conexoes/:id/testar', auth(), requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.test));
+// Estas duas saem para o Entra a cada chamada, então têm teto próprio: a cota
+// que um loop aqui gastaria é a do tenant do cliente, medida pela Microsoft.
+router.post('/api/diretorio/conexoes/testar', auth(), externalCallRateLimit, requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.test));
+router.post('/api/diretorio/conexoes/:id/testar', auth(), externalCallRateLimit, requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.test));
 
 // ---------- Integrações públicas (preenchimento automático de cadastro) ----------
 router.get('/api/lookup/cnpj/:cnpj', auth(), requirePermission(P.CLIENT_CREATE, P.CLIENT_EDIT), asyncHandler(lookupController.cnpj));

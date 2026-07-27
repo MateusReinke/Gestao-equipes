@@ -85,7 +85,10 @@ function exigirTenant(user?: JwtPayload): number {
   return user.activeTenantId;
 }
 
-function exigirModuloHabilitado() {
+/// Exportada porque o controller precisa dela ANTES de validar o corpo: com o
+/// módulo desligado, responder "dados inválidos" mandaria quem chama depurar o
+/// payload quando o problema é o recurso não existir neste ambiente.
+export function exigirModuloHabilitado() {
   if (!env.enableEntraSync) {
     throw new DiretorioDesabilitadoError(
       'A sincronização com diretório está desligada neste ambiente. Defina ENABLE_ENTRA_SYNC=true no backend para habilitá-la.'

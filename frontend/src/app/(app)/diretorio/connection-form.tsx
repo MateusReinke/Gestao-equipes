@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, Check, KeyRound, Plug, RefreshCw, X } from 'lucide-react';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input, Select } from '@/components/ui';
+import { DeleteButton } from '@/components/delete-button';
 import type { Conexao, Equipe, OpcoesDiretorio, ResultadoTeste } from './types';
 
 /**
@@ -329,7 +330,27 @@ export function ConnectionForm({ conexao, equipes }: { conexao: Conexao | null; 
             {!conexao ? (
               <span className="text-2xs text-ink-subtle">Testar não salva nada — dá para conferir antes.</span>
             ) : null}
+            {conexao ? (
+              <div className="ml-auto">
+                {/* O 409 do backend (pessoas já vinculadas a colaboradores) chega
+                    inteiro aqui: é ele que diz quantas são e sugere desativar. */}
+                <DeleteButton
+                  url={`/api/diretorio/conexoes/${conexao.id}`}
+                  rotulo="Remover conexão"
+                  confirmacao="Remover? O que já foi lido do diretório é apagado junto."
+                />
+              </div>
+            ) : null}
           </div>
+
+          {conexao ? (
+            <p className="text-2xs leading-relaxed text-ink-subtle">
+              Remover apaga o espelho do diretório desta empresa — pessoas, departamentos, cargos e histórico de
+              execuções. Nada disso é perdido de verdade: uma nova sincronização traz tudo de volta. Já os vínculos
+              com colaboradores são decisão de gente, então uma conexão com pessoas vinculadas não é removida — para
+              só parar de sincronizar, desmarque &ldquo;Ativa&rdquo; abaixo.
+            </p>
+          ) : null}
 
           {erro ? <Alert tone="danger">{erro}</Alert> : null}
           {sucesso ? <Alert tone="ok">{sucesso}</Alert> : null}
