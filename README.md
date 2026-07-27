@@ -296,6 +296,30 @@ Cada permissão é verificada em separado, porque o consentimento de administrad
 
 Os códigos `AADSTS` mais comuns viram instrução acionável em vez do parágrafo em inglês com trace id: segredo inválido aponta para o campo *Value* (e não *Secret ID*); segredo vencido manda gerar outro em *Certificates & secrets*; tenant não encontrado avisa que o campo é um GUID, não o nome do domínio.
 
+### A carga
+
+**Equipes > Diretório > Sincronizar agora** faz a leitura completa: percorre
+`/users` paginado, grava página a página no espelho e, ao final, deriva os
+catálogos e marca quem não veio.
+
+Três decisões que moldam o comportamento em falha:
+
+- **Grava por página, não ao final.** Num tenant de milhares de contas,
+  acumular tudo em memória transformaria uma queda no meio em "nada foi salvo".
+  Assim, uma interrupção deixa a execução `parcial` — o que entrou continua
+  valendo, e a próxima completa o resto.
+- **Ausentes só são marcados com a leitura inteira concluída.** Marcar a partir
+  de uma leitura interrompida apagaria do espelho quem apenas não chegou a ser
+  lido.
+- **Uma pessoa que falha ao gravar não derruba a carga.** O conflito fica
+  registrado com nome e Object ID, e o resto do diretório entra. Ela também
+  fica de fora da lista de presentes — não temos como afirmar que está lá.
+
+Contas desabilitadas entram por padrão (`SYNC_DISABLED_USERS`): sumir com elas
+apagaria o nome de quem aparece no histórico de escalas. Quem sai do diretório
+recebe `removido_em`, nunca `DELETE` — e o vínculo com colaborador, se houver,
+sobrevive intacto.
+
 ### Departamento e cargo são derivados, não sincronizados
 
 No Microsoft Graph `department` e `jobTitle` são strings livres no usuário — não existe endpoint `/departments`. O catálogo é montado a partir dos valores distintos encontrados, e "departamento deixou de existir" significa que nenhuma pessoa ativa o referencia mais: marca `ativo = false`, nunca `DELETE`. Como é texto livre, erro de digitação no diretório cria departamento novo, e `mesclado_em_id` permite unificar dois registros sem perder o histórico de qual grafia veio do provedor.
@@ -330,11 +354,18 @@ Configurar credencial é separado de ver o diretório de propósito: o Gestor ac
 
 ### Estado atual
 
-Entregue: schema do espelho, conexão por empresa com segredo cifrado, contrato `DirectoryProvider` (com o Entra como primeira implementação), cliente Graph com `Retry-After` honrado e tradução de erro, e o teste de conexão.
+Entregue: schema do espelho, conexão por empresa com segredo cifrado, contrato
+`DirectoryProvider` (com o Entra como primeira implementação), cliente Graph com
+paginação e `Retry-After` honrado, teste de conexão, **carga completa de pessoas
+com catálogos derivados** e a **tela do espelho em leitura** — pessoas com busca
+e filtro, catálogos, e histórico de execuções com contadores.
+
+Nada disso alcança dado operacional: o espelho é réplica, e a ponte para o
+cadastro só nasce na reconciliação.
 
 Remover uma conexão apaga o espelho em cascata — é réplica, e uma nova sincronização traz tudo de volta. Já uma conexão com pessoas vinculadas a colaboradores responde **409** com a contagem, porque vínculo é decisão de gente: para só parar de sincronizar, desative a conexão.
 
-Ainda não entregue: carga das pessoas, sincronização incremental por delta, agendador, reconciliação com o cadastro, grupos, organograma e fotos.
+Ainda não entregue: sincronização incremental por delta, agendador, reconciliação com o cadastro, grupos, organograma e fotos.
 
 ## Módulos
 
@@ -380,7 +411,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 cd backend && npm test
 ```
 
-315 testes cobrindo:
+343 testes cobrindo:
 
 - **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
 - **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
@@ -403,4 +434,6 @@ cd backend && npm test
 - **Teste de conexão:** permissão obrigatória ausente reprova, opcional ausente não reprova, credencial recusada nem chega a verificar permissão, e cada recurso verificado em separado.
 - **Conexão de diretório:** segredo nunca sai na resposta, domínio recusado no lugar do GUID, criação automática barrada sem equipe de entrada, edição sem segredo preserva o guardado, troca de credencial invalida o teste anterior e remoção segurada por vínculo com colaborador.
 - **Rotas do diretório:** com o módulo desligado, listar/criar/testar respondem 503 com a instrução — e não 200 vazio, que sugeriria "está ligado, só não configurado" —, a guarda de sessão vem antes da de habilitação para que ninguém descubra sem se autenticar se a empresa usa diretório, e o 503 precede a validação do corpo.
+- **Motor de sincronização:** primeira carga contando criações, reexecução contando atualizações, quem sumiu virando removido, catálogos derivados do espelho gravado (e não da resposta), contas desabilitadas dentro e fora conforme a opção, leitura interrompida que não marca ausentes nem grava cursor, pessoa que falha sem derrubar a carga e sem entrar na lista de presentes, recusa de execução concorrente, e log desligado que ainda registra o erro.
+- **Mapeamento do Entra:** e-mail de caixa preferido ao login, queda para o login quando não há caixa, primeiro telefone da lista, string em branco tratada como ausente, conta de serviço sem nome caindo no login, objeto sem Object ID descartado, `accountEnabled` ausente tratado como habilitada e o marcador de exclusão do delta.
 - **Fronteira diretório/operação:** nenhum arquivo do módulo importa repositório operacional fora da lista declarada, provedores não importam Prisma como valor, e o repositório do módulo só lê de tabela operacional.

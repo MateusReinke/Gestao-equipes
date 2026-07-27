@@ -5,6 +5,7 @@ import type { JwtPayload } from '../../types/auth';
 import { directoryRepository } from './directory.repository';
 import { ChaveDeCifragemAusenteError, cifrar, contextoDaConexao, decifrar, impressaoDigital } from './crypto';
 import { criarProvider, ProvedorNaoSuportadoError, type ResultadoDoTeste } from './providers';
+import { SincronizacaoEmAndamentoError, sincronizarPessoas } from './sync/sync.engine';
 
 /**
  * Configuração da conexão com o provedor de identidade.
@@ -308,4 +309,96 @@ export async function testarConexao(
   return resultado;
 }
 
-export { ChaveDeCifragemAusenteError, ProvedorNaoSuportadoError };
+// ---------------------------------------------------------------- espelho
+
+export class ConexaoInativaError extends Error {}
+
+/// Monta o provedor a partir de uma conexão salva, decifrando o segredo.
+async function providerDaConexao(tenantId: number, id: number) {
+  const conexao = await directoryRepository.buscarConexao(tenantId, id);
+  if (!conexao) throw new ConexaoNaoEncontradaError('Conexão não encontrada');
+
+  const opcoes = normalizarOpcoes(conexao.opcoes);
+  const provider = criarProvider(conexao.provider, {
+    tenantId: conexao.provedorTenantId,
+    clientId: conexao.clientId,
+    clientSecret: decifrar(conexao.clientSecretCifrado, contextoDaConexao(tenantId)),
+    authorityUrl: conexao.authorityUrl,
+  });
+
+  return { conexao, opcoes, provider };
+}
+
+/**
+ * Dispara a carga do diretório para o espelho.
+ *
+ * Nada aqui alcança colaborador, equipe ou escala: o motor só escreve em
+ * `diretorio_*`. É o que permite rodar isto em produção antes de autorizar
+ * qualquer efeito sobre o cadastro.
+ */
+export async function sincronizarDiretorio(id: number, user?: JwtPayload) {
+  exigirModuloHabilitado();
+  const tenantId = exigirTenant(user);
+
+  const { conexao, opcoes, provider } = await providerDaConexao(tenantId, id);
+
+  if (!conexao.ativo) {
+    throw new ConexaoInativaError(
+      'Esta conexão está inativa. Ative-a antes de sincronizar — inativa ela mantém o que já foi lido, mas não busca nada novo.'
+    );
+  }
+
+  if (!opcoes.sincronizarUsuarios) {
+    throw new ConexaoInativaError('A leitura de pessoas está desligada nas opções desta conexão.');
+  }
+
+  return sincronizarPessoas({
+    tenantId,
+    connectionId: conexao.id,
+    provider,
+    incluirDesabilitados: opcoes.sincronizarUsuariosDesabilitados,
+    logOperacoes: opcoes.logOperacoes,
+    disparadoPorId: user?.userId ?? null,
+  });
+}
+
+export const filtroDePessoasSchema = z.object({
+  conexaoId: z.coerce.number().int().positive(),
+  busca: z.string().trim().max(120).optional(),
+  departamento: z.string().trim().max(120).optional(),
+  incluirRemovidos: z.coerce.boolean().optional(),
+  take: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+export async function listarPessoasDoEspelho(filtros: z.infer<typeof filtroDePessoasSchema>, user?: JwtPayload) {
+  exigirModuloHabilitado();
+  const tenantId = exigirTenant(user);
+
+  const conexao = await directoryRepository.buscarConexao(tenantId, filtros.conexaoId);
+  if (!conexao) throw new ConexaoNaoEncontradaError('Conexão não encontrada');
+
+  return directoryRepository.listarPessoas(tenantId, conexao.id, filtros);
+}
+
+export async function resumoDoDiretorio(conexaoId: number, user?: JwtPayload) {
+  exigirModuloHabilitado();
+  const tenantId = exigirTenant(user);
+
+  const conexao = await directoryRepository.buscarConexao(tenantId, conexaoId);
+  if (!conexao) throw new ConexaoNaoEncontradaError('Conexão não encontrada');
+
+  const [[presentes, desabilitadas, removidas, vinculadas], [departamentos, cargos], execucoes] = await Promise.all([
+    directoryRepository.resumoDoEspelho(tenantId, conexao.id),
+    directoryRepository.listarCatalogos(tenantId, conexao.id),
+    directoryRepository.listarExecucoes(tenantId, conexao.id, 10),
+  ]);
+
+  return {
+    contadores: { presentes, desabilitadas, removidas, vinculadas },
+    departamentos,
+    cargos,
+    execucoes,
+  };
+}
+
+export { ChaveDeCifragemAusenteError, ProvedorNaoSuportadoError, SincronizacaoEmAndamentoError };

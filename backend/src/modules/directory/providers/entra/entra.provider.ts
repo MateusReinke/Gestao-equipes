@@ -1,4 +1,11 @@
-import type { DirectoryProvider, ResultadoDoTeste, VerificacaoDeAcesso } from '../provider.types';
+import type {
+  DirectoryProvider,
+  OpcoesDeLeitura,
+  PaginaDePessoas,
+  ResultadoDoTeste,
+  VerificacaoDeAcesso,
+} from '../provider.types';
+import { CAMPOS_DE_USUARIO, mapearUsuario, type UsuarioGraph } from './entra.mapper';
 import {
   GraphAuthError,
   GraphPermissionError,
@@ -77,6 +84,37 @@ export class EntraIdProvider implements DirectoryProvider {
     const ok = verificacoes.every((item) => item.ok || !item.obrigatoria);
 
     return { ok, organizacao: organizacao.dados, verificacoes, erro: null };
+  }
+
+  /**
+   * Percorre as contas do tenant.
+   *
+   * Na leitura completa o filtro de habilitadas vai no `$filter` do Graph, e
+   * não em JavaScript: filtrar aqui gastaria banda e cota para trazer contas
+   * que seriam descartadas — num tenant grande, isso é a diferença entre
+   * dezenas e milhares de objetos transferidos.
+   */
+  async *listarPessoas(opcoes: OpcoesDeLeitura): AsyncGenerator<PaginaDePessoas> {
+    // Cursor guardado = deltaLink, que já carrega os próprios parâmetros de
+    // consulta. Reescrevê-los invalidaria o token.
+    const caminho = opcoes.cursor ?? this.caminhoDeLeituraCompleta(opcoes.incluirDesabilitados);
+
+    for await (const pagina of this.graph.paginar<UsuarioGraph>(caminho)) {
+      const pessoas = pagina.itens
+        .map((usuario) => mapearUsuario(usuario))
+        // Objeto sem Object ID não tem chave de vínculo. Raro, mas acontece
+        // com resultado parcial do Graph — e vincular por e-mail no lugar é
+        // exatamente o que não se deve fazer.
+        .filter((pessoa): pessoa is NonNullable<typeof pessoa> => pessoa !== null);
+
+      yield { pessoas, cursor: pagina.deltaLink };
+    }
+  }
+
+  private caminhoDeLeituraCompleta(incluirDesabilitados: boolean): string {
+    const partes = [`$select=${CAMPOS_DE_USUARIO}`, '$top=999'];
+    if (!incluirDesabilitados) partes.push('$filter=accountEnabled eq true');
+    return `/users?${partes.join('&')}`;
   }
 
   /// Confirma que as credenciais apontam para o tenant que quem configura

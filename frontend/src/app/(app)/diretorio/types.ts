@@ -53,3 +53,48 @@ export type ResultadoTeste = {
 };
 
 export type Equipe = { id: number; nome: string };
+
+export type PessoaDoEspelho = {
+  id: number;
+  externalId: string;
+  nomeExibicao: string;
+  email: string | null;
+  cargo: string | null;
+  departamento: string | null;
+  contaHabilitada: boolean;
+  removidoEm: string | null;
+  ultimaVezEm: string;
+  /// Preenchido quando a pessoa já foi vinculada a um colaborador. Na Fase B
+  /// ninguém preenche isto — a reconciliação é da Fase D.
+  colaboradorId: number | null;
+};
+
+export type ItemDeCatalogo = {
+  id: number;
+  nome: string;
+  ativo: boolean;
+  pessoas: number;
+  ultimaVezEm: string;
+};
+
+export type Execucao = {
+  id: number;
+  modo: 'completa' | 'incremental';
+  status: 'executando' | 'sucesso' | 'parcial' | 'erro';
+  objetosLidos: number;
+  objetosCriados: number;
+  objetosAtualizados: number;
+  objetosRemovidos: number;
+  conflitos: number;
+  erro: string | null;
+  iniciadoEm: string;
+  finalizadoEm: string | null;
+  disparadoPor: { id: number; nome: string } | null;
+};
+
+export type ResumoDoDiretorio = {
+  contadores: { presentes: number; desabilitadas: number; removidas: number; vinculadas: number };
+  departamentos: ItemDeCatalogo[];
+  cargos: ItemDeCatalogo[];
+  execucoes: Execucao[];
+};

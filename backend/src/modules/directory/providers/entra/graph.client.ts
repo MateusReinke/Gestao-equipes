@@ -139,10 +139,26 @@ function extrairErroDoGraph(corpo: string): { codigo: string | null; mensagem: s
   }
 }
 
+/// Envelope de coleção do Graph. `nextLink` pagina; `deltaLink` só aparece na
+/// última página de uma consulta delta e é o cursor da próxima execução.
+export type ColecaoGraph<T> = {
+  value?: T[];
+  '@odata.nextLink'?: string;
+  '@odata.deltaLink'?: string;
+};
+
+export type PaginaGraph<T> = {
+  itens: T[];
+  /// Preenchido só na última página de uma consulta delta.
+  deltaLink: string | null;
+};
+
 export type GraphClient = {
   obterToken(): Promise<string>;
   /// GET no Graph, já autenticado, com repetição e tradução de erro.
   get<T = unknown>(caminho: string, opcoes?: { consistenciaEventual?: boolean }): Promise<T>;
+  /// Percorre uma coleção seguindo `@odata.nextLink` até o fim.
+  paginar<T>(caminho: string, opcoes?: { consistenciaEventual?: boolean }): AsyncGenerator<PaginaGraph<T>>;
 };
 
 export function criarGraphClient(credenciais: GraphCredenciais): GraphClient {
@@ -285,5 +301,27 @@ export function criarGraphClient(credenciais: GraphCredenciais): GraphClient {
     );
   }
 
-  return { obterToken, get };
+  async function* paginar<T>(
+    caminho: string,
+    opcoes: { consistenciaEventual?: boolean } = {}
+  ): AsyncGenerator<PaginaGraph<T>> {
+    let proxima: string | null = caminho;
+
+    while (proxima) {
+      const resposta: ColecaoGraph<T> = await get<ColecaoGraph<T>>(proxima, opcoes);
+      const seguinte = resposta['@odata.nextLink'] ?? null;
+
+      yield {
+        itens: resposta.value ?? [],
+        // O deltaLink só vem quando não há mais página: é o marcador de "li
+        // tudo até aqui". Guardá-lo antes do fim faria a próxima execução
+        // incremental pular o que ainda não tinha sido lido.
+        deltaLink: seguinte ? null : (resposta['@odata.deltaLink'] ?? null),
+      };
+
+      proxima = seguinte;
+    }
+  }
+
+  return { obterToken, get, paginar };
 }

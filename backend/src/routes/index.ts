@@ -163,6 +163,13 @@ router.delete('/api/diretorio/conexoes/:id', auth(), requirePermission(P.DIRECTO
 // que um loop aqui gastaria é a do tenant do cliente, medida pela Microsoft.
 router.post('/api/diretorio/conexoes/testar', auth(), externalCallRateLimit, requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.test));
 router.post('/api/diretorio/conexoes/:id/testar', auth(), externalCallRateLimit, requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.test));
+// Sincronizar também sai para o provedor, e uma carga completa é bem mais cara
+// que um teste — mesmo teto, pela mesma razão.
+router.post('/api/diretorio/conexoes/:id/sincronizar', auth(), externalCallRateLimit, requirePermission(P.DIRECTORY_SYNC), asyncHandler(directoryController.sync));
+// Leitura do espelho: `directory.view` basta, porque aqui nada sai para o
+// provedor nem alcança dado operacional.
+router.get('/api/diretorio/conexoes/:id/pessoas', auth(), requirePermission(P.DIRECTORY_VIEW), asyncHandler(directoryController.people));
+router.get('/api/diretorio/conexoes/:id/resumo', auth(), requirePermission(P.DIRECTORY_VIEW), asyncHandler(directoryController.summary));
 
 // ---------- Integrações públicas (preenchimento automático de cadastro) ----------
 router.get('/api/lookup/cnpj/:cnpj', auth(), requirePermission(P.CLIENT_CREATE, P.CLIENT_EDIT), asyncHandler(lookupController.cnpj));

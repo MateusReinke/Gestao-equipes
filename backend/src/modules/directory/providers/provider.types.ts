@@ -46,6 +46,60 @@ export type ResultadoDoTeste = {
   erro: string | null;
 };
 
+/**
+ * Uma pessoa como o diretório a descreve, em forma canônica.
+ *
+ * Nenhum nome aqui é da Microsoft: `userPrincipalName` virou `loginPrincipal`,
+ * `accountEnabled` virou `contaHabilitada`, `jobTitle` virou `cargo`. É o que
+ * permitirá plugar Google Workspace ou LDAP escrevendo só um mapper.
+ *
+ * Tudo além de `externalId` e `nomeExibicao` é opcional porque, na prática, é:
+ * diretório corporativo tem conta de serviço sem sobrenome, sem departamento e
+ * sem telefone, e recusá-las seria recusar metade do tenant.
+ */
+export type PessoaDiretorio = {
+  /// Object ID do provedor. A chave de vínculo — nunca e-mail ou nome.
+  externalId: string;
+  nomeExibicao: string;
+  primeiroNome: string | null;
+  sobrenome: string | null;
+  email: string | null;
+  loginPrincipal: string | null;
+  cargo: string | null;
+  departamento: string | null;
+  empresa: string | null;
+  escritorio: string | null;
+  telefone: string | null;
+  celular: string | null;
+  pais: string | null;
+  cidade: string | null;
+  estado: string | null;
+  idioma: string | null;
+  fusoHorario: string | null;
+  contaHabilitada: boolean;
+  gestorExternalId: string | null;
+  /// O provedor informou que este objeto saiu do diretório. Só aparece em
+  /// sincronização incremental — numa completa, ausência é o que indica saída.
+  removido: boolean;
+  /// Payload cru, para diagnosticar divergência sem reconsultar o provedor.
+  bruto: unknown;
+};
+
+export type PaginaDePessoas = {
+  pessoas: PessoaDiretorio[];
+  /// Cursor OPACO para a próxima execução incremental. Só vem na última
+  /// página; o motor nunca interpreta o conteúdo.
+  cursor: string | null;
+};
+
+export type OpcoesDeLeitura = {
+  /// Retomar de onde parou. Nulo = leitura completa.
+  cursor?: string | null;
+  /// Conta desabilitada entra no espelho por padrão: sumir com ela apagaria o
+  /// nome de quem aparece no histórico de escalas.
+  incluirDesabilitados: boolean;
+};
+
 export interface DirectoryProvider {
   readonly tipo: DirectoryProviderType;
 
@@ -56,4 +110,13 @@ export interface DirectoryProvider {
    * não pôde ser executado.
    */
   testarConexao(): Promise<ResultadoDoTeste>;
+
+  /**
+   * Percorre as pessoas do diretório, uma página por vez.
+   *
+   * Gerador, e não um array: um tenant corporativo tem milhares de contas, e
+   * carregar tudo em memória para só então gravar transformaria uma falha no
+   * meio do caminho em "nada foi salvo". Página a página, o que já entrou fica.
+   */
+  listarPessoas(opcoes: OpcoesDeLeitura): AsyncIterable<PaginaDePessoas>;
 }

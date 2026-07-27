@@ -5,19 +5,25 @@ import {
   ChaveDeCifragemAusenteError,
   ConexaoComVinculosError,
   ConexaoDuplicadaError,
+  ConexaoInativaError,
   ConexaoNaoEncontradaError,
   DiretorioDesabilitadoError,
   EquipePadraoInvalidaError,
   ProvedorNaoSuportadoError,
   SegredoObrigatorioError,
   SemEmpresaAtivaError,
+  SincronizacaoEmAndamentoError,
   atualizarConexao,
   conexaoSchema,
   conexaoUpdateSchema,
   criarConexao,
   exigirModuloHabilitado,
+  filtroDePessoasSchema,
   listarConexoes,
+  listarPessoasDoEspelho,
   removerConexao,
+  resumoDoDiretorio,
+  sincronizarDiretorio,
   testarConexao,
 } from './directory.service';
 
@@ -35,6 +41,10 @@ function tratarErro(error: unknown, res: Response) {
   if (error instanceof EquipePadraoInvalidaError) return res.status(400).json({ error: error.message });
   if (error instanceof SegredoObrigatorioError) return res.status(400).json({ error: error.message });
   if (error instanceof ProvedorNaoSuportadoError) return res.status(400).json({ error: error.message });
+  if (error instanceof ConexaoInativaError) return res.status(409).json({ error: error.message });
+  // 409 e não 429: o pedido é legítimo, mas o estado atual (uma execução já
+  // rodando) o torna redundante. A mensagem diz desde quando.
+  if (error instanceof SincronizacaoEmAndamentoError) return res.status(409).json({ error: error.message });
   throw error;
 }
 
@@ -121,6 +131,47 @@ export const directoryController = {
         antes: conexao,
       });
       return res.status(204).send();
+    } catch (error) {
+      return tratarErro(error, res);
+    }
+  },
+
+  async sync(req: Request, res: Response) {
+    try {
+      const resultado = await sincronizarDiretorio(Number(req.params.id), req.user);
+
+      // Auditoria como `create`: a execução é um fato novo. O que ela mexeu
+      // fica em `diretorio_execucao_eventos`, não aqui — misturar milhares de
+      // linhas de robô com o rastro de ações humanas inutilizaria os dois.
+      await auditFromRequest(req, {
+        acao: 'create',
+        entidade: 'diretorio_execucao',
+        entidadeId: resultado.runId,
+        descricao: `Sincronizou o diretório: ${resultado.lidos} lida(s), ${resultado.criados} nova(s), ${resultado.removidos} removida(s)`,
+        depois: resultado,
+      });
+
+      return res.json(resultado);
+    } catch (error) {
+      return tratarErro(error, res);
+    }
+  },
+
+  async people(req: Request, res: Response) {
+    const parsed = filtroDePessoasSchema.safeParse({ ...req.query, conexaoId: req.params.id });
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Filtros inválidos', issues: parsed.error.flatten().fieldErrors });
+    }
+    try {
+      return res.json(await listarPessoasDoEspelho(parsed.data, req.user));
+    } catch (error) {
+      return tratarErro(error, res);
+    }
+  },
+
+  async summary(req: Request, res: Response) {
+    try {
+      return res.json(await resumoDoDiretorio(Number(req.params.id), req.user));
     } catch (error) {
       return tratarErro(error, res);
     }

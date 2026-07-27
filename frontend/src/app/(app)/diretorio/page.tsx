@@ -4,7 +4,15 @@ import { fetchApiSafe } from '@/lib/api';
 import { requirePermissionSession } from '@/lib/session';
 import { PERMISSIONS, can } from '@/lib/session-types';
 import { ConnectionForm, RetestButton } from './connection-form';
-import type { Conexao, Equipe } from './types';
+import { MirrorPanel } from './mirror-panel';
+import type { Conexao, Equipe, ResumoDoDiretorio } from './types';
+
+const RESUMO_VAZIO: ResumoDoDiretorio = {
+  contadores: { presentes: 0, desabilitadas: 0, removidas: 0, vinculadas: 0 },
+  departamentos: [],
+  cargos: [],
+  execucoes: [],
+};
 
 /**
  * Configuração da sincronização organizacional.
@@ -67,9 +75,14 @@ export default async function DiretorioPage() {
   }
 
   const conexao = conexoesResult.data[0] ?? null;
-  const equipesResult = podeConfigurar
-    ? await fetchApiSafe<Equipe[]>('/api/equipes', [])
-    : { data: [] as Equipe[], error: null, status: 200 };
+  const podeSincronizar = can(session.permissoes, PERMISSIONS.DIRECTORY_SYNC);
+
+  const [equipesResult, resumoResult] = await Promise.all([
+    podeConfigurar ? fetchApiSafe<Equipe[]>('/api/equipes', []) : Promise.resolve({ data: [] as Equipe[], error: null, status: 200 }),
+    conexao
+      ? fetchApiSafe<ResumoDoDiretorio>(`/api/diretorio/conexoes/${conexao.id}/resumo`, RESUMO_VAZIO)
+      : Promise.resolve({ data: RESUMO_VAZIO, error: null, status: 200 }),
+  ]);
 
   return (
     <>
@@ -113,6 +126,14 @@ export default async function DiretorioPage() {
             )}
           </CardBody>
         </Card>
+      ) : null}
+
+      {/* O espelho vem antes do formulário: quem abre esta tela no dia a dia
+          quer ver o que entrou, não reconfigurar credencial. */}
+      {conexao ? (
+        <div className="mb-4">
+          <MirrorPanel conexaoId={conexao.id} resumo={resumoResult.data} podeSincronizar={podeSincronizar} />
+        </div>
       ) : null}
 
       {podeConfigurar ? (

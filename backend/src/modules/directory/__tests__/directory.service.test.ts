@@ -22,6 +22,7 @@ vi.mock('../providers', async (importarOriginal) => {
 import { directoryRepository } from '../directory.repository';
 import { criarProvider } from '../providers';
 import { cifrar, contextoDaConexao } from '../crypto';
+import { FakeProvider } from '../providers/fake.provider';
 import {
   ConexaoComVinculosError,
   ConexaoDuplicadaError,
@@ -99,7 +100,7 @@ const TESTE_OK = { ok: true, organizacao: null, verificacoes: [], erro: null };
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mockProvider.mockReturnValue({ tipo: 'entra', testarConexao: vi.fn().mockResolvedValue(TESTE_OK) });
+  mockProvider.mockReturnValue(new FakeProvider({ paginas: [], resultadoDoTeste: TESTE_OK }));
 });
 
 describe('validação do formulário', () => {
@@ -314,18 +315,20 @@ describe('teste de conexão', () => {
 
   it('registra a falha obrigatória como motivo do erro', async () => {
     mockBuscar.mockResolvedValue(conexaoSalva() as never);
-    mockProvider.mockReturnValue({
-      tipo: 'entra',
-      testarConexao: vi.fn().mockResolvedValue({
+    mockProvider.mockReturnValue(
+      new FakeProvider({
+        paginas: [],
+        resultadoDoTeste: {
         ok: false,
         organizacao: null,
         erro: null,
         verificacoes: [
           { recurso: 'Grupos', permissao: 'Group.Read.All', ok: false, obrigatoria: false, detalhe: 'opcional falhou' },
-          { recurso: 'Usuários', permissao: 'User.Read.All', ok: false, obrigatoria: true, detalhe: 'falta consentimento' },
-        ],
-      }),
-    });
+            { recurso: 'Usuários', permissao: 'User.Read.All', ok: false, obrigatoria: true, detalhe: 'falta consentimento' },
+          ],
+        },
+      })
+    );
 
     await testarConexao(3, undefined, undefined, admin);
 
