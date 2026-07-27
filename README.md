@@ -320,6 +320,56 @@ apagaria o nome de quem aparece no histórico de escalas. Quem sai do diretório
 recebe `removido_em`, nunca `DELETE` — e o vínculo com colaborador, se houver,
 sobrevive intacto.
 
+### Incremental, e o que fazer quando o cursor morre
+
+Toda leitura passa por `/users/delta`, inclusive a completa — é o único endpoint
+que devolve, na última página, o `@odata.deltaLink` que serve de cursor para a
+próxima execução. Uma carga por `/users` comum leria tudo e não deixaria por
+onde continuar.
+
+O preço é não poder filtrar contas desabilitadas no servidor (o delta aceita um
+conjunto restrito de filtros). Elas vêm e o motor decide — o que, aliás, é a
+única forma correta: filtrar na origem faria a leitura incremental **nunca ver**
+quem acabou de ser desabilitado, e o espelho o afirmaria ativo para sempre.
+
+Duas diferenças entre os modos que não são detalhe:
+
+- **A completa deduz saídas por ausência**; a incremental **não**. O delta só
+  traz quem mudou, então deduzir ali marcaria como removida quase a empresa
+  inteira. Na incremental, a saída vem sinalizada pelo próprio provedor.
+- **Cursor novo só é guardado com a leitura fechada.** Guardá-lo depois de uma
+  interrupção faria a execução seguinte pular o que faltou.
+
+Quando o Graph responde **410** (`syncStateNotFound`), o cursor venceu — delta
+parado por ~30 dias, ou mudança de configuração do tenant. Não é falha: é
+"recomece do zero", e o motor recomeça sozinho, registra o motivo e marca a
+execução como completa. Sem isso, a sincronização morreria em silêncio e
+ninguém perceberia por semanas.
+
+A condição mora no contrato como `CursorExpiradoError`, não na implementação do
+Entra: Google e LDAP têm a mesma condição com outro nome, e o motor precisa
+reagir a uma coisa só.
+
+### Agendador
+
+Roda no processo da própria API, sem infraestrutura nova: acorda a cada minuto,
+olha quais conexões venceram o **intervalo da própria empresa** e sincroniza em
+série — disparar todas de uma vez faria do backend uma fonte de rajadas contra
+o limite de taxa da Microsoft, que é medido por aplicação.
+
+A pergunta óbvia, "e se houver duas instâncias?", é respondida por uma trava de
+reivindicação em `diretorio_conexoes.sincronizando_desde`, por comparação-e-troca
+atômica (`UPDATE ... WHERE sincronizando_desde IS NULL`). As duas acordam, as
+duas tentam, uma ganha e a outra segue em frente. Sem fila, sem lock
+distribuído, sem cron externo para operar.
+
+Reivindicação com mais de uma hora conta como abandonada — um processo morto no
+meio de uma carga não pode travar a conexão para sempre. E a liberação está em
+`finally`: exceção inesperada não deixa a conexão presa.
+
+Conexão nunca sincronizada vence imediatamente, para ativar não significar
+esperar um intervalo inteiro até ver o primeiro dado.
+
 ### Departamento e cargo são derivados, não sincronizados
 
 No Microsoft Graph `department` e `jobTitle` são strings livres no usuário — não existe endpoint `/departments`. O catálogo é montado a partir dos valores distintos encontrados, e "departamento deixou de existir" significa que nenhuma pessoa ativa o referencia mais: marca `ativo = false`, nunca `DELETE`. Como é texto livre, erro de digitação no diretório cria departamento novo, e `mesclado_em_id` permite unificar dois registros sem perder o histórico de qual grafia veio do provedor.
@@ -356,16 +406,18 @@ Configurar credencial é separado de ver o diretório de propósito: o Gestor ac
 
 Entregue: schema do espelho, conexão por empresa com segredo cifrado, contrato
 `DirectoryProvider` (com o Entra como primeira implementação), cliente Graph com
-paginação e `Retry-After` honrado, teste de conexão, **carga completa de pessoas
-com catálogos derivados** e a **tela do espelho em leitura** — pessoas com busca
-e filtro, catálogos, e histórico de execuções com contadores.
+paginação e `Retry-After` honrado, teste de conexão, carga completa de pessoas
+com catálogos derivados, **sincronização incremental com queda automática para
+completa quando o cursor expira**, **agendador com trava de concorrência** e a
+tela do espelho em leitura — pessoas com busca e filtro, catálogos, e histórico
+de execuções com modo, contadores e motivo.
 
 Nada disso alcança dado operacional: o espelho é réplica, e a ponte para o
 cadastro só nasce na reconciliação.
 
 Remover uma conexão apaga o espelho em cascata — é réplica, e uma nova sincronização traz tudo de volta. Já uma conexão com pessoas vinculadas a colaboradores responde **409** com a contagem, porque vínculo é decisão de gente: para só parar de sincronizar, desative a conexão.
 
-Ainda não entregue: sincronização incremental por delta, agendador, reconciliação com o cadastro, grupos, organograma e fotos.
+Ainda não entregue: reconciliação com o cadastro, grupos, organograma e fotos.
 
 ## Módulos
 
@@ -411,7 +463,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 cd backend && npm test
 ```
 
-343 testes cobrindo:
+366 testes cobrindo:
 
 - **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
 - **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
@@ -435,5 +487,9 @@ cd backend && npm test
 - **Conexão de diretório:** segredo nunca sai na resposta, domínio recusado no lugar do GUID, criação automática barrada sem equipe de entrada, edição sem segredo preserva o guardado, troca de credencial invalida o teste anterior e remoção segurada por vínculo com colaborador.
 - **Rotas do diretório:** com o módulo desligado, listar/criar/testar respondem 503 com a instrução — e não 200 vazio, que sugeriria "está ligado, só não configurado" —, a guarda de sessão vem antes da de habilitação para que ninguém descubra sem se autenticar se a empresa usa diretório, e o 503 precede a validação do corpo.
 - **Motor de sincronização:** primeira carga contando criações, reexecução contando atualizações, quem sumiu virando removido, catálogos derivados do espelho gravado (e não da resposta), contas desabilitadas dentro e fora conforme a opção, leitura interrompida que não marca ausentes nem grava cursor, pessoa que falha sem derrubar a carga e sem entrar na lista de presentes, recusa de execução concorrente, e log desligado que ainda registra o erro.
+- **Leitura incremental:** usa o cursor guardado e se declara incremental, não deduz saída por ausência, respeita o marcador de saída explícita, e o modo completa forçado ignora o cursor.
+- **Cursor expirado:** recomeça do zero sozinho, registra o motivo, fecha a execução como completa (não como a incremental que começou) e volta a deduzir ausências.
+- **Trava de concorrência:** recusa quando outra execução já reivindicou, e libera a trava tanto no caminho feliz quanto quando a execução estoura.
+- **Agendador:** conexão nunca sincronizada vence na hora, intervalo é o da própria empresa (com queda para o padrão quando o valor é lixo), ocupada e inativa são puladas, reivindicação órfã de mais de uma hora não segura a conexão, perder a corrida pela trava não é erro, uma empresa com problema não impede as seguintes, e a sincronização é em série.
 - **Mapeamento do Entra:** e-mail de caixa preferido ao login, queda para o login quando não há caixa, primeiro telefone da lista, string em branco tratada como ausente, conta de serviço sem nome caindo no login, objeto sem Object ID descartado, `accountEnabled` ausente tratado como habilitada e o marcador de exclusão do delta.
 - **Fronteira diretório/operação:** nenhum arquivo do módulo importa repositório operacional fora da lista declarada, provedores não importam Prisma como valor, e o repositório do módulo só lê de tabela operacional.

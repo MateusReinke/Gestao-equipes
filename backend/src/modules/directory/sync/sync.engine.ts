@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { directoryRepository } from '../directory.repository';
-import type { DirectoryProvider, PessoaDiretorio } from '../providers/provider.types';
+import { CursorExpiradoError, type DirectoryProvider, type PessoaDiretorio } from '../providers/provider.types';
 
 /**
  * Motor de sincronização.
@@ -14,8 +14,11 @@ import type { DirectoryProvider, PessoaDiretorio } from '../providers/provider.t
  * próprio, com lista fechada de campos.
  */
 
+export type ModoSolicitado = 'auto' | 'completa';
+
 export type ResultadoDaSincronizacao = {
   runId: number;
+  modo: 'completa' | 'incremental';
   status: 'sucesso' | 'parcial' | 'erro';
   lidos: number;
   criados: number;
@@ -23,6 +26,9 @@ export type ResultadoDaSincronizacao = {
   removidos: number;
   departamentos: number;
   cargos: number;
+  /// Verdadeiro quando começou incremental e teve de recomeçar do zero porque
+  /// o provedor invalidou o cursor.
+  recomecouDoZero: boolean;
   erro: string | null;
 };
 
@@ -30,10 +36,22 @@ export type ParametrosDeSincronizacao = {
   tenantId: number;
   connectionId: number;
   provider: DirectoryProvider;
+  /// Cursor guardado da execução anterior. Nulo força leitura completa.
+  cursor?: string | null;
+  modo?: ModoSolicitado;
+  /// Conta desabilitada fica no espelho? Política da empresa, aplicada aqui e
+  /// não no provedor — ver `OpcoesDeLeitura`.
   incluirDesabilitados: boolean;
   logOperacoes: boolean;
   disparadoPorId?: number | null;
 };
+
+export class SincronizacaoEmAndamentoError extends Error {}
+
+/// Uma reivindicação mais antiga que isto conta como abandonada. Generoso o
+/// bastante para uma carga grande de um tenant corporativo não ser interrompida
+/// por si mesma, curto o bastante para não travar a conexão por um dia.
+const ABANDONO_APOS_MS = 60 * 60 * 1000;
 
 /// Traduz a forma canônica para as colunas do espelho. Nada aqui decide nada:
 /// é cópia de campo, e é de propósito que seja entediante.
@@ -62,48 +80,77 @@ function paraLinha(pessoa: PessoaDiretorio): Omit<Prisma.DirectoryPersonUnchecke
   };
 }
 
-export class SincronizacaoEmAndamentoError extends Error {}
+/**
+ * O que fazer com cada pessoa que o provedor entregou.
+ *
+ * Separado do laço porque é aqui que mora a política, e política escondida
+ * dentro de um `for` é política que ninguém revisa.
+ */
+function decidir(pessoa: PessoaDiretorio, incluirDesabilitados: boolean): 'gravar' | 'remover' {
+  // O provedor disse que o objeto saiu do diretório (marcador do delta).
+  if (pessoa.removido) return 'remover';
+
+  // A empresa optou por não guardar contas desabilitadas. Note que ela ainda
+  // é PROCESSADA: é justamente por vir na leitura incremental que descobrimos
+  // que acabou de ser desabilitada. Filtrá-la na origem manteria o espelho
+  // afirmando que ela está ativa para sempre.
+  if (!incluirDesabilitados && !pessoa.contaHabilitada) return 'remover';
+
+  return 'gravar';
+}
+
+type Acumulado = {
+  lidos: number;
+  criados: number;
+  atualizados: number;
+  removidos: number;
+  conflitos: number;
+  cursor: string | null;
+  vistos: string[];
+  concluiu: boolean;
+  erro: string | null;
+};
 
 /**
- * Executa uma sincronização completa.
+ * Executa uma sincronização.
  *
  * Grava página a página, e não tudo ao final: num tenant de milhares de contas,
  * acumular em memória transformaria uma falha no meio em "nada foi salvo". Com
  * gravação incremental, uma interrupção deixa a execução `parcial` — o que já
  * entrou continua valendo, e a próxima execução completa o resto.
- *
- * Por isso também os ausentes só são marcados quando a leitura terminou
- * inteira: marcar a partir de uma leitura interrompida apagaria do espelho
- * gente que apenas não chegou a ser lida.
  */
 export async function sincronizarPessoas(params: ParametrosDeSincronizacao): Promise<ResultadoDaSincronizacao> {
-  const emAndamento = await directoryRepository.execucaoEmAndamento(params.connectionId);
-  if (emAndamento) {
+  const reivindicou = await directoryRepository.reivindicar(
+    params.connectionId,
+    new Date(Date.now() - ABANDONO_APOS_MS)
+  );
+
+  if (!reivindicou) {
     throw new SincronizacaoEmAndamentoError(
-      `Já existe uma sincronização em andamento desde ${emAndamento.iniciadoEm.toLocaleString('pt-BR')}. Aguarde ela terminar.`
+      'Já existe uma sincronização em andamento para esta conexão. Aguarde ela terminar.'
     );
   }
 
+  try {
+    return await executar(params);
+  } finally {
+    // `finally` e não no caminho feliz: exceção inesperada que deixasse a
+    // trava presa inutilizaria a conexão até o prazo de abandono.
+    await directoryRepository.liberar(params.connectionId);
+  }
+}
+
+async function executar(params: ParametrosDeSincronizacao): Promise<ResultadoDaSincronizacao> {
+  const querIncremental = params.modo !== 'completa' && Boolean(params.cursor);
   const run = await directoryRepository.abrirExecucao({
     tenantId: params.tenantId,
     connectionId: params.connectionId,
-    modo: 'completa',
+    modo: querIncremental ? 'incremental' : 'completa',
     status: 'executando',
     disparadoPorId: params.disparadoPorId ?? null,
   });
 
-  const existentes = await directoryRepository.idsExistentes(params.connectionId);
-  const vistos: string[] = [];
   const eventos: Prisma.DirectorySyncEventUncheckedCreateInput[] = [];
-
-  let lidos = 0;
-  let criados = 0;
-  let atualizados = 0;
-  let conflitos = 0;
-  let cursor: string | null = null;
-  let leituraCompleta = false;
-  let erro: string | null = null;
-
   function registrar(nivel: 'info' | 'aviso' | 'erro', externalId: string | null, acao: string, mensagem: string) {
     // `logOperacoes` desligado ainda registra o que deu errado: é justamente o
     // que alguém vai procurar depois. O que se corta é o "atualizei fulano".
@@ -111,66 +158,38 @@ export async function sincronizarPessoas(params: ParametrosDeSincronizacao): Pro
     eventos.push({ runId: run.id, nivel, entidade: 'pessoa', externalId, acao, mensagem });
   }
 
-  try {
-    for await (const pagina of params.provider.listarPessoas({
-      cursor: null,
-      incluirDesabilitados: params.incluirDesabilitados,
-    })) {
-      for (const pessoa of pagina.pessoas) {
-        lidos += 1;
+  let modo: 'completa' | 'incremental' = querIncremental ? 'incremental' : 'completa';
+  let recomecouDoZero = false;
+  let acumulado = await ler(params, modo, registrar);
 
-        try {
-          await directoryRepository.upsertPessoa(params.tenantId, params.connectionId, paraLinha(pessoa));
-          vistos.push(pessoa.externalId);
-
-          if (existentes.has(pessoa.externalId)) {
-            // "Já existia no espelho", não "mudou alguma coisa": distinguir os
-            // dois exigiria comparar campo a campo o que o banco já tem, e a
-            // carga completa reescreve todo mundo de qualquer forma. Por isso
-            // `objetosInalterados` fica zerado aqui — é a sincronização
-            // incremental (Fase C) que terá esse número com significado.
-            atualizados += 1;
-          } else {
-            criados += 1;
-            registrar('info', pessoa.externalId, 'criada', `Nova no espelho: ${pessoa.nomeExibicao}`);
-          }
-        } catch (falha) {
-          // Uma pessoa problemática não derruba a carga inteira — o resto do
-          // diretório continua entrando, e o conflito fica registrado com nome
-          // e id para alguém resolver.
-          conflitos += 1;
-          registrar(
-            'erro',
-            pessoa.externalId,
-            'conflito',
-            `Não foi possível gravar ${pessoa.nomeExibicao}: ${falha instanceof Error ? falha.message : 'erro desconhecido'}`
-          );
-        }
-      }
-
-      if (pagina.cursor) cursor = pagina.cursor;
-    }
-
-    leituraCompleta = true;
-  } catch (falha) {
-    erro = falha instanceof Error ? falha.message : 'Falha ao ler o diretório';
-    registrar('erro', null, 'leitura_interrompida', erro);
+  // O provedor invalidou o cursor (delta parado tempo demais, ou mudança de
+  // configuração do tenant). Não é falha: é "recomece do zero", e recomeçar
+  // sozinho é o que impede a sincronização de morrer em silêncio.
+  if (acumulado.expirou) {
+    registrar('aviso', null, 'cursor_expirado', 'O cursor incremental expirou. Refazendo a leitura completa.');
+    modo = 'completa';
+    recomecouDoZero = true;
+    acumulado = await ler(params, 'completa', registrar);
   }
 
-  let removidos = 0;
   let departamentos = 0;
   let cargos = 0;
 
-  if (leituraCompleta) {
-    const ausentes = await directoryRepository.marcarAusentes(params.connectionId, vistos, new Date());
-    removidos = ausentes.count;
-    if (removidos > 0) {
-      registrar('aviso', null, 'ausentes', `${removidos} pessoa(s) não vieram nesta leitura e foram marcadas como removidas`);
+  if (acumulado.concluiu) {
+    // Só a leitura completa sabe quem sumiu por ausência. Na incremental, o
+    // provedor informa cada saída explicitamente — deduzir por ausência ali
+    // marcaria como removido todo mundo que apenas não mudou.
+    if (modo === 'completa') {
+      const ausentes = await directoryRepository.marcarAusentes(params.connectionId, acumulado.vistos, new Date());
+      acumulado.removidos += ausentes.count;
+      if (ausentes.count > 0) {
+        registrar('aviso', null, 'ausentes', `${ausentes.count} pessoa(s) não vieram nesta leitura e foram marcadas como removidas`);
+      }
     }
 
     // Os catálogos derivam do espelho já gravado, não do que veio na resposta:
     // assim a contagem bate com o que a tela mostra, mesmo que alguma pessoa
-    // tenha falhado ao gravar.
+    // tenha falhado ao gravar — e, na incremental, cobre também quem não veio.
     const [porDepartamento, porCargo] = await Promise.all([
       directoryRepository.contarPorCampo(params.connectionId, 'departamento'),
       directoryRepository.contarPorCampo(params.connectionId, 'cargo'),
@@ -182,28 +201,125 @@ export async function sincronizarPessoas(params: ParametrosDeSincronizacao): Pro
     departamentos = porDepartamento.length;
     cargos = porCargo.length;
 
-    // Carga completa por `/users` não devolve cursor — só `/users/delta` o faz.
-    // Gravar `null` aqui é deliberado: apaga qualquer cursor anterior e força a
-    // próxima execução a ser completa também. É a direção segura. Manter um
-    // cursor que antecede esta leitura faria a incremental seguinte partir de
-    // um ponto que já não descreve o estado do espelho.
-    await directoryRepository.atualizarCursor(params.connectionId, cursor);
+    // Cursor novo só é guardado quando a leitura fechou. Guardá-lo depois de
+    // uma leitura interrompida faria a próxima execução pular o que faltou.
+    await directoryRepository.atualizarCursor(params.connectionId, acumulado.cursor);
   }
 
-  const status: ResultadoDaSincronizacao['status'] = !leituraCompleta ? 'erro' : conflitos > 0 ? 'parcial' : 'sucesso';
+  const status: ResultadoDaSincronizacao['status'] = !acumulado.concluiu
+    ? 'erro'
+    : acumulado.conflitos > 0
+      ? 'parcial'
+      : 'sucesso';
 
   await directoryRepository.registrarEventos(eventos);
   await directoryRepository.fecharExecucao(run.id, {
+    modo,
     status,
-    objetosLidos: lidos,
-    objetosCriados: criados,
-    objetosAtualizados: atualizados,
+    objetosLidos: acumulado.lidos,
+    objetosCriados: acumulado.criados,
+    objetosAtualizados: acumulado.atualizados,
     objetosInalterados: 0,
-    objetosRemovidos: removidos,
-    conflitos,
-    erro,
-    detalhes: { departamentos, cargos } as Prisma.InputJsonValue,
+    objetosRemovidos: acumulado.removidos,
+    conflitos: acumulado.conflitos,
+    erro: acumulado.erro,
+    detalhes: { departamentos, cargos, recomecouDoZero } as Prisma.InputJsonValue,
   });
 
-  return { runId: run.id, status, lidos, criados, atualizados, removidos, departamentos, cargos, erro };
+  return {
+    runId: run.id,
+    modo,
+    status,
+    lidos: acumulado.lidos,
+    criados: acumulado.criados,
+    atualizados: acumulado.atualizados,
+    removidos: acumulado.removidos,
+    departamentos,
+    cargos,
+    recomecouDoZero,
+    erro: acumulado.erro,
+  };
+}
+
+/// Uma passada de leitura. Isolada para que a queda de incremental para
+/// completa seja literalmente chamar de novo, com o estado zerado — em vez de
+/// desfazer contadores pela metade.
+async function ler(
+  params: ParametrosDeSincronizacao,
+  modo: 'completa' | 'incremental',
+  registrar: (nivel: 'info' | 'aviso' | 'erro', externalId: string | null, acao: string, mensagem: string) => void
+): Promise<Acumulado & { expirou: boolean }> {
+  const existentes = await directoryRepository.idsExistentes(params.connectionId);
+  const acumulado: Acumulado & { expirou: boolean } = {
+    lidos: 0,
+    criados: 0,
+    atualizados: 0,
+    removidos: 0,
+    conflitos: 0,
+    cursor: null,
+    vistos: [],
+    concluiu: false,
+    erro: null,
+    expirou: false,
+  };
+
+  try {
+    for await (const pagina of params.provider.listarPessoas({
+      cursor: modo === 'incremental' ? params.cursor : null,
+    })) {
+      for (const pessoa of pagina.pessoas) {
+        acumulado.lidos += 1;
+
+        try {
+          if (decidir(pessoa, params.incluirDesabilitados) === 'remover') {
+            acumulado.removidos += await directoryRepository.marcarRemovida(
+              params.connectionId,
+              pessoa.externalId,
+              new Date()
+            );
+            registrar('info', pessoa.externalId, 'removida', `Saiu do espelho: ${pessoa.nomeExibicao}`);
+            continue;
+          }
+
+          await directoryRepository.upsertPessoa(params.tenantId, params.connectionId, paraLinha(pessoa));
+          acumulado.vistos.push(pessoa.externalId);
+
+          if (existentes.has(pessoa.externalId)) {
+            // "Já existia no espelho", não "mudou alguma coisa": distinguir os
+            // dois exigiria comparar campo a campo, e a carga completa reescreve
+            // todo mundo de qualquer forma. `objetosInalterados` fica zerado.
+            acumulado.atualizados += 1;
+          } else {
+            acumulado.criados += 1;
+            registrar('info', pessoa.externalId, 'criada', `Nova no espelho: ${pessoa.nomeExibicao}`);
+          }
+        } catch (falha) {
+          // Uma pessoa problemática não derruba a carga inteira — o resto do
+          // diretório continua entrando, e o conflito fica registrado com nome
+          // e id para alguém resolver.
+          acumulado.conflitos += 1;
+          registrar(
+            'erro',
+            pessoa.externalId,
+            'conflito',
+            `Não foi possível gravar ${pessoa.nomeExibicao}: ${falha instanceof Error ? falha.message : 'erro desconhecido'}`
+          );
+        }
+      }
+
+      if (pagina.cursor) acumulado.cursor = pagina.cursor;
+    }
+
+    acumulado.concluiu = true;
+  } catch (falha) {
+    if (falha instanceof CursorExpiradoError) {
+      acumulado.expirou = true;
+      return acumulado;
+    }
+
+    acumulado.erro = falha instanceof Error ? falha.message : 'Falha ao ler o diretório';
+    registrar('erro', null, 'leitura_interrompida', acumulado.erro);
+  }
+
+  return acumulado;
 }

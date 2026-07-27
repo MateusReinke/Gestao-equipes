@@ -15,6 +15,20 @@
 
 import type { DirectoryProviderType } from '@prisma/client';
 
+/**
+ * O cursor de leitura incremental não vale mais e a leitura tem de recomeçar
+ * do zero.
+ *
+ * Mora no contrato, e não na implementação do Entra, porque todo provedor com
+ * sincronização incremental tem essa condição: o Graph a chama de
+ * `syncStateNotFound`, o Google de `syncToken` inválido, o LDAP de cookie de
+ * paginação expirado. O motor precisa reagir a uma coisa só.
+ *
+ * Não é falha: é o provedor dizendo "recomece". Tratá-la como erro faria a
+ * sincronização morrer em silêncio e ninguém perceber por semanas.
+ */
+export class CursorExpiradoError extends Error {}
+
 /// Uma capacidade verificada durante o teste de conexão.
 ///
 /// Cada linha responde "esta permissão foi concedida?" separadamente, porque
@@ -94,10 +108,12 @@ export type PaginaDePessoas = {
 
 export type OpcoesDeLeitura = {
   /// Retomar de onde parou. Nulo = leitura completa.
+  ///
+  /// Não há opção de filtrar desabilitados aqui de propósito: o provedor relata
+  /// o diretório como ele é, e quem decide o que entra no espelho é o motor.
+  /// Filtrar na origem quebraria a leitura incremental — uma conta que ACABOU
+  /// de ser desabilitada não viria, e o espelho a manteria ativa para sempre.
   cursor?: string | null;
-  /// Conta desabilitada entra no espelho por padrão: sumir com ela apagaria o
-  /// nome de quem aparece no histórico de escalas.
-  incluirDesabilitados: boolean;
 };
 
 export interface DirectoryProvider {

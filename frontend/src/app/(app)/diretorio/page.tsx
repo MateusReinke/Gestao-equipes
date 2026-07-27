@@ -132,7 +132,14 @@ export default async function DiretorioPage() {
           quer ver o que entrou, não reconfigurar credencial. */}
       {conexao ? (
         <div className="mb-4">
-          <MirrorPanel conexaoId={conexao.id} resumo={resumoResult.data} podeSincronizar={podeSincronizar} />
+          <MirrorPanel
+            conexaoId={conexao.id}
+            resumo={resumoResult.data}
+            podeSincronizar={podeSincronizar}
+            conexaoAtiva={conexao.ativo}
+            intervaloMinutos={conexao.opcoes.intervaloMinutos}
+            ultimaSincronizacaoEm={conexao.ultimaSincronizacaoEm}
+          />
         </div>
       ) : null}
 

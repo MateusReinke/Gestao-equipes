@@ -336,7 +336,7 @@ async function providerDaConexao(tenantId: number, id: number) {
  * `diretorio_*`. É o que permite rodar isto em produção antes de autorizar
  * qualquer efeito sobre o cadastro.
  */
-export async function sincronizarDiretorio(id: number, user?: JwtPayload) {
+export async function sincronizarDiretorio(id: number, forcarCompleta = false, user?: JwtPayload) {
   exigirModuloHabilitado();
   const tenantId = exigirTenant(user);
 
@@ -356,6 +356,10 @@ export async function sincronizarDiretorio(id: number, user?: JwtPayload) {
     tenantId,
     connectionId: conexao.id,
     provider,
+    cursor: conexao.cursorPessoas,
+    // `completa` é uma escolha de quem clica: "esqueça o cursor e releia tudo".
+    // Sem isso, uma divergência suspeita não teria como ser resolvida pela tela.
+    modo: forcarCompleta ? 'completa' : 'auto',
     incluirDesabilitados: opcoes.sincronizarUsuariosDesabilitados,
     logOperacoes: opcoes.logOperacoes,
     disparadoPorId: user?.userId ?? null,

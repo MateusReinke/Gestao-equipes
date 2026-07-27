@@ -89,15 +89,20 @@ export class EntraIdProvider implements DirectoryProvider {
   /**
    * Percorre as contas do tenant.
    *
-   * Na leitura completa o filtro de habilitadas vai no `$filter` do Graph, e
-   * não em JavaScript: filtrar aqui gastaria banda e cota para trazer contas
-   * que seriam descartadas — num tenant grande, isso é a diferença entre
-   * dezenas e milhares de objetos transferidos.
+   * Sempre por `/users/delta`, mesmo na leitura completa — e é isso que torna a
+   * sincronização incremental possível: só o endpoint delta devolve, na última
+   * página, o `@odata.deltaLink` que serve de cursor para a próxima execução.
+   * Uma carga por `/users` comum leria tudo e não deixaria por onde continuar.
+   *
+   * O preço é não poder filtrar desabilitadas no servidor: o delta aceita um
+   * conjunto restrito de filtros, e `accountEnabled` não está garantido nele.
+   * Trazer as contas e deixar o motor decidir custa banda, mas é o único jeito
+   * de a leitura incremental enxergar quem ACABOU de ser desabilitado.
    */
   async *listarPessoas(opcoes: OpcoesDeLeitura): AsyncGenerator<PaginaDePessoas> {
-    // Cursor guardado = deltaLink, que já carrega os próprios parâmetros de
-    // consulta. Reescrevê-los invalidaria o token.
-    const caminho = opcoes.cursor ?? this.caminhoDeLeituraCompleta(opcoes.incluirDesabilitados);
+    // Cursor guardado é o deltaLink inteiro, com os próprios parâmetros de
+    // consulta embutidos. Reescrevê-los invalidaria o token.
+    const caminho = opcoes.cursor ?? `/users/delta?$select=${CAMPOS_DE_USUARIO}`;
 
     for await (const pagina of this.graph.paginar<UsuarioGraph>(caminho)) {
       const pessoas = pagina.itens
@@ -109,12 +114,6 @@ export class EntraIdProvider implements DirectoryProvider {
 
       yield { pessoas, cursor: pagina.deltaLink };
     }
-  }
-
-  private caminhoDeLeituraCompleta(incluirDesabilitados: boolean): string {
-    const partes = [`$select=${CAMPOS_DE_USUARIO}`, '$top=999'];
-    if (!incluirDesabilitados) partes.push('$filter=accountEnabled eq true');
-    return `/users?${partes.join('&')}`;
   }
 
   /// Confirma que as credenciais apontam para o tenant que quem configura

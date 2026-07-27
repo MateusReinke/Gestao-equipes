@@ -132,6 +132,57 @@ export const directoryRepository = {
     });
   },
 
+  /// Marca uma pessoa específica como fora do diretório. Usado quando o
+  /// provedor informa a saída explicitamente (leitura incremental) ou quando a
+  /// conta foi desabilitada e a empresa optou por não guardar desabilitadas.
+  async marcarRemovida(connectionId: number, externalId: string, quando: Date) {
+    const { count } = await prisma.directoryPerson.updateMany({
+      where: { connectionId, externalId, removidoEm: null },
+      data: { removidoEm: quando },
+    });
+    return count;
+  },
+
+  // ------------------------------------------------------- trava de execução
+
+  /**
+   * Reivindica a conexão para sincronizar, por comparação-e-troca atômica.
+   *
+   * Devolve `false` quando outra execução já a tem. O `updateMany` com a
+   * condição no `where` é o que fecha a janela de corrida: consultar e depois
+   * gravar deixaria espaço para duas instâncias passarem juntas.
+   *
+   * `limiteDeAbandono` recupera reivindicação órfã — processo que morreu no
+   * meio de uma carga deixaria a conexão travada para sempre.
+   */
+  async reivindicar(connectionId: number, limiteDeAbandono: Date): Promise<boolean> {
+    const { count } = await prisma.directoryConnection.updateMany({
+      where: {
+        id: connectionId,
+        OR: [{ sincronizandoDesde: null }, { sincronizandoDesde: { lt: limiteDeAbandono } }],
+      },
+      data: { sincronizandoDesde: new Date() },
+    });
+    return count === 1;
+  },
+
+  liberar(connectionId: number) {
+    return prisma.directoryConnection.updateMany({
+      where: { id: connectionId },
+      data: { sincronizandoDesde: null },
+    });
+  },
+
+  /// Conexões ativas de TODAS as empresas, para o agendador escolher as
+  /// vencidas. É a única consulta do módulo que cruza tenants, e é assim de
+  /// propósito: o agendador é do deployment, não de uma empresa.
+  conexoesAtivas() {
+    return prisma.directoryConnection.findMany({
+      where: { ativo: true },
+      orderBy: { ultimaSincronizacaoEm: { sort: 'asc', nulls: 'first' } },
+    });
+  },
+
   /// Valores distintos de um campo entre as pessoas presentes, com a contagem.
   /// É daqui que saem os catálogos: no Graph, departamento e cargo são texto
   /// livre no usuário, não recursos com endpoint próprio.

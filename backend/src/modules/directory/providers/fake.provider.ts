@@ -5,6 +5,7 @@ import type {
   PessoaDiretorio,
   ResultadoDoTeste,
 } from './provider.types';
+import { CursorExpiradoError } from './provider.types';
 
 /**
  * Provedor de mentira, para os testes.
@@ -24,8 +25,13 @@ export class FakeProvider implements DirectoryProvider {
 
   constructor(
     private readonly config: {
+      /// Roteiro da leitura completa (sem cursor).
       paginas: PessoaDiretorio[][];
+      /// Roteiro da leitura incremental (com cursor).
+      paginasIncrementais?: PessoaDiretorio[][];
       cursorFinal?: string | null;
+      /// Faz a leitura com cursor estourar como se o token tivesse vencido.
+      cursorExpirado?: boolean;
       /// Índice da página em que a leitura estoura, para exercitar o caminho
       /// de execução parcial.
       falharNaPagina?: number;
@@ -40,15 +46,22 @@ export class FakeProvider implements DirectoryProvider {
   }
 
   async *listarPessoas(opcoes: OpcoesDeLeitura): AsyncGenerator<PaginaDePessoas> {
-    for (const [indice, pagina] of this.config.paginas.entries()) {
+    // Com cursor, entrega o roteiro incremental; sem cursor, o completo. É como
+    // o Entra se comporta, e é o que permite exercitar a queda para leitura
+    // completa quando o cursor expira.
+    const roteiro = opcoes.cursor ? (this.config.paginasIncrementais ?? []) : this.config.paginas;
+
+    if (opcoes.cursor && this.config.cursorExpirado) {
+      throw new CursorExpiradoError('Cursor simulado como expirado');
+    }
+
+    for (const [indice, pagina] of roteiro.entries()) {
       if (this.config.falharNaPagina === indice) {
         throw new Error('Falha simulada de leitura do diretório');
       }
 
-      const pessoas = opcoes.incluirDesabilitados ? pagina : pagina.filter((pessoa) => pessoa.contaHabilitada);
-      const ultima = indice === this.config.paginas.length - 1;
-
-      yield { pessoas, cursor: ultima ? (this.config.cursorFinal ?? null) : null };
+      const ultima = indice === roteiro.length - 1;
+      yield { pessoas: pagina, cursor: ultima ? (this.config.cursorFinal ?? null) : null };
     }
   }
 }

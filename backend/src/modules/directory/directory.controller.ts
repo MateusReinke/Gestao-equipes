@@ -138,7 +138,10 @@ export const directoryController = {
 
   async sync(req: Request, res: Response) {
     try {
-      const resultado = await sincronizarDiretorio(Number(req.params.id), req.user);
+      // `?completa=true` ignora o cursor e relê tudo. É a saída de quem
+      // desconfia do que está no espelho.
+      const forcarCompleta = req.query.completa === 'true';
+      const resultado = await sincronizarDiretorio(Number(req.params.id), forcarCompleta, req.user);
 
       // Auditoria como `create`: a execução é um fato novo. O que ela mexeu
       // fica em `diretorio_execucao_eventos`, não aqui — misturar milhares de
@@ -147,7 +150,7 @@ export const directoryController = {
         acao: 'create',
         entidade: 'diretorio_execucao',
         entidadeId: resultado.runId,
-        descricao: `Sincronizou o diretório: ${resultado.lidos} lida(s), ${resultado.criados} nova(s), ${resultado.removidos} removida(s)`,
+        descricao: `Sincronizou o diretório (${resultado.modo}${resultado.recomecouDoZero ? ', cursor expirado' : ''}): ${resultado.lidos} lida(s), ${resultado.criados} nova(s), ${resultado.removidos} removida(s)`,
         depois: resultado,
       });
 

@@ -87,6 +87,9 @@ export type Execucao = {
   objetosRemovidos: number;
   conflitos: number;
   erro: string | null;
+  /// `recomecouDoZero` explica uma execução que começou incremental e teve de
+  /// reler tudo porque o provedor invalidou o cursor.
+  detalhes: { departamentos?: number; cargos?: number; recomecouDoZero?: boolean } | null;
   iniciadoEm: string;
   finalizadoEm: string | null;
   disparadoPor: { id: number; nome: string } | null;

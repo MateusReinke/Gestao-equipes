@@ -1,4 +1,5 @@
 import { env } from '../../../../config/env';
+import { CursorExpiradoError } from '../provider.types';
 
 /**
  * Cliente do Microsoft Graph.
@@ -49,6 +50,16 @@ export class GraphRequestError extends Error {
     super(message);
   }
 }
+
+/**
+ * A forma que o Graph dá à condição canônica de cursor expirado.
+ *
+ * Acontece por decurso de prazo (o Graph descarta estado delta parado por
+ * ~30 dias) ou quando a configuração do tenant muda de um jeito que invalida o
+ * histórico. Herda de `CursorExpiradoError` para que o motor reaja a uma
+ * condição só, sem saber de qual provedor ela veio.
+ */
+export class GraphDeltaExpiradoError extends CursorExpiradoError {}
 
 const TIMEOUT_MS = 30_000;
 const MAX_TENTATIVAS = 4;
@@ -273,6 +284,13 @@ export function criarGraphClient(credenciais: GraphCredenciais): GraphClient {
       if (resposta.status === 401 && tentativa < MAX_TENTATIVAS) {
         tokenCache = null;
         continue;
+      }
+
+      // 410 num delta é "seu token venceu, recomece", e não um erro a repetir.
+      if (resposta.status === 410 || codigo === 'syncStateNotFound' || codigo === 'resyncRequired') {
+        throw new GraphDeltaExpiradoError(
+          mensagem || 'O cursor de sincronização incremental expirou. Será feita uma leitura completa.'
+        );
       }
 
       if (resposta.status === 403 || codigo === 'Authorization_RequestDenied') {

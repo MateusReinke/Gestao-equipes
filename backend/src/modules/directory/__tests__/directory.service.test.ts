@@ -78,6 +78,7 @@ function conexaoSalva(sobrescreve: Record<string, unknown> = {}) {
     cursorPessoas: null,
     cursorGrupos: null,
     ultimaSincronizacaoEm: null,
+    sincronizandoDesde: null,
     ultimoTesteEm: new Date('2026-07-01T10:00:00Z'),
     ultimoTesteOk: true,
     ultimoErro: null,

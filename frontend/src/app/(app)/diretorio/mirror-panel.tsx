@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, CircleSlash, Download, RefreshCw, Search, UserX } from 'lucide-react';
+import { Building2, CircleSlash, Clock, Download, RefreshCw, RotateCcw, Search, UserX } from 'lucide-react';
 import {
   Alert,
   Badge,
@@ -102,14 +102,33 @@ function Catalogo({ titulo, itens, icone }: { titulo: string; itens: ItemDeCatal
   );
 }
 
+/// Quando o agendador deve rodar de novo. Espelha `proximaExecucao` do backend
+/// — é informativo, e mostrar "daqui a pouco" é melhor que não mostrar nada.
+function proximaEm(ultima: string | null, intervaloMinutos: number): string {
+  if (!ultima) return 'na próxima batida do agendador';
+
+  const alvo = new Date(ultima).getTime() + intervaloMinutos * 60_000;
+  const minutos = Math.round((alvo - Date.now()) / 60_000);
+
+  if (minutos <= 0) return 'a qualquer momento';
+  if (minutos < 60) return `em ~${minutos} min`;
+  return `em ~${Math.round(minutos / 60)}h`;
+}
+
 export function MirrorPanel({
   conexaoId,
   resumo,
   podeSincronizar,
+  conexaoAtiva,
+  intervaloMinutos,
+  ultimaSincronizacaoEm,
 }: {
   conexaoId: number;
   resumo: ResumoDoDiretorio;
   podeSincronizar: boolean;
+  conexaoAtiva: boolean;
+  intervaloMinutos: number;
+  ultimaSincronizacaoEm: string | null;
 }) {
   const router = useRouter();
   const [busca, setBusca] = useState('');
@@ -149,11 +168,14 @@ export function MirrorPanel({
     return () => clearTimeout(timer);
   }, [carregar, busca]);
 
-  async function sincronizar() {
+  async function sincronizar(completa = false) {
     setSincronizando(true);
     setErro(null);
     try {
-      const response = await fetch(`/api/diretorio/conexoes/${conexaoId}/sincronizar`, { method: 'POST' });
+      const response = await fetch(
+        `/api/diretorio/conexoes/${conexaoId}/sincronizar${completa ? '?completa=true' : ''}`,
+        { method: 'POST' }
+      );
       const dados = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -181,10 +203,17 @@ export function MirrorPanel({
           description="Réplica somente leitura. Nada aqui virou colaborador, escala ou turno."
           action={
             podeSincronizar ? (
-              <Button size="sm" onClick={sincronizar} disabled={sincronizando}>
-                <Download size={14} className={sincronizando ? 'animate-pulse' : undefined} />
-                {sincronizando ? 'Sincronizando...' : 'Sincronizar agora'}
-              </Button>
+              <>
+                {/* Releitura do zero: a saída de quem desconfia do que está no
+                    espelho. O botão normal usa o cursor e é muito mais barato. */}
+                <Button variant="ghost" size="sm" onClick={() => sincronizar(true)} disabled={sincronizando}>
+                  <RotateCcw size={14} /> Recarregar tudo
+                </Button>
+                <Button size="sm" onClick={() => sincronizar(false)} disabled={sincronizando}>
+                  <Download size={14} className={sincronizando ? 'animate-pulse' : undefined} />
+                  {sincronizando ? 'Sincronizando...' : 'Sincronizar agora'}
+                </Button>
+              </>
             ) : null
           }
         />
@@ -310,7 +339,17 @@ export function MirrorPanel({
       <Card>
         <CardHeader
           title="Execuções"
-          description={ultima ? `Última em ${quando(ultima.iniciadoEm)}` : 'Nenhuma execução registrada.'}
+          description={
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+              <span>{ultima ? `Última em ${quando(ultima.iniciadoEm)}` : 'Nenhuma execução registrada.'}</span>
+              <span className="flex items-center gap-1">
+                <Clock size={11} className="shrink-0" />
+                {conexaoAtiva
+                  ? `Agendador roda ${proximaEm(ultimaSincronizacaoEm, intervaloMinutos)}`
+                  : 'Conexão inativa — o agendador não a sincroniza'}
+              </span>
+            </span>
+          }
           action={
             <Button variant="ghost" size="sm" onClick={() => router.refresh()}>
               <RefreshCw size={14} /> Atualizar
@@ -344,6 +383,11 @@ export function MirrorPanel({
                       </Td>
                       <Td>
                         <Badge tone={TOM_DA_EXECUCAO[execucao.status]}>{execucao.status}</Badge>
+                        {execucao.detalhes?.recomecouDoZero ? (
+                          // Explica por que uma execução que era para ser
+                          // incremental aparece como completa.
+                          <span className="mt-1 block text-2xs text-ink-subtle">cursor expirou, releu tudo</span>
+                        ) : null}
                         {execucao.erro ? (
                           <span className="mt-1 block max-w-xs text-2xs text-danger">{execucao.erro}</span>
                         ) : null}

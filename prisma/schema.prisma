@@ -858,6 +858,14 @@ model DirectoryConnection {
   cursorGrupos  String? @map("cursor_grupos")
 
   ultimaSincronizacaoEm DateTime? @map("ultima_sincronizacao_em")
+
+  /// Trava de concorrência. Preenchida enquanto uma execução está em curso, e
+  /// reivindicada por comparação-e-troca atômica: duas instâncias do backend
+  /// (ou o agendador e um clique no botão) nunca sincronizam a mesma conexão
+  /// ao mesmo tempo. Reivindicação antiga demais é considerada abandonada —
+  /// senão um processo morto no meio deixaria a conexão travada para sempre.
+  sincronizandoDesde DateTime? @map("sincronizando_desde")
+
   ultimoTesteEm         DateTime? @map("ultimo_teste_em")
   ultimoTesteOk         Boolean?  @map("ultimo_teste_ok")
   ultimoErro            String?   @map("ultimo_erro")
@@ -876,6 +884,9 @@ model DirectoryConnection {
   /// Entra e Google ao mesmo tempo sem mudar o modelo.
   @@unique([tenantId, provider])
   @@index([tenantId])
+  /// Serve à varredura do agendador — a única consulta do módulo que cruza
+  /// empresas, porque o agendador é do deployment e não de uma delas.
+  @@index([ativo, ultimaSincronizacaoEm])
   @@map("diretorio_conexoes")
 }
 
