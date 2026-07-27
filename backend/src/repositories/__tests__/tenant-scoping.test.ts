@@ -14,6 +14,9 @@ vi.mock('../../config/prisma', () => ({
     managerTeam: { findMany: vi.fn() },
     shareGrant: { findMany: vi.fn(), findFirst: vi.fn(), deleteMany: vi.fn() },
     dashboard: { findMany: vi.fn() },
+    directoryConnection: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
+    directoryPerson: { count: vi.fn() },
+    $transaction: vi.fn().mockResolvedValue([0, 0]),
   },
 }));
 
@@ -28,6 +31,7 @@ import { shiftRepository } from '../shift.repository';
 import { swapRepository } from '../swap.repository';
 import { shareRepository } from '../share.repository';
 import { dashboardRepository } from '../dashboard.repository';
+import { directoryRepository } from '../../modules/directory/directory.repository';
 
 const TENANT_ID = 42;
 
@@ -160,6 +164,53 @@ describe('repositórios sempre filtram por tenant_id', () => {
     await dashboardRepository.findOwnedBy(TENANT_ID, 4);
     expect(prisma.dashboard.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ tenantId: TENANT_ID, ownerUserId: 4 }) })
+    );
+  });
+
+  it('directoryRepository.listarConexoes filtra por tenant', async () => {
+    await directoryRepository.listarConexoes(TENANT_ID);
+    expect(prisma.directoryConnection.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tenantId: TENANT_ID } })
+    );
+  });
+
+  it('directoryRepository.buscarConexao combina tenantId + id', async () => {
+    await directoryRepository.buscarConexao(TENANT_ID, 3);
+    expect(prisma.directoryConnection.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: TENANT_ID, id: 3 }) })
+    );
+  });
+
+  it('directoryRepository.criarConexao injeta tenantId mesmo sem vir nos dados', async () => {
+    await directoryRepository.criarConexao(TENANT_ID, { nome: 'Entra' } as never);
+    expect(prisma.directoryConnection.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ tenantId: TENANT_ID }) })
+    );
+  });
+
+  it('directoryRepository.atualizarConexao usa updateMany com tenantId no filtro', async () => {
+    await directoryRepository.atualizarConexao(TENANT_ID, 3, { nome: 'X' });
+    expect(prisma.directoryConnection.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 3, tenantId: TENANT_ID } })
+    );
+  });
+
+  it('directoryRepository.registrarTeste não escreve na conexão de outra empresa', async () => {
+    await directoryRepository.registrarTeste(TENANT_ID, 3, true, null);
+    expect(prisma.directoryConnection.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 3, tenantId: TENANT_ID } })
+    );
+  });
+
+  it('directoryRepository.removerConexao exige tenantId', async () => {
+    await directoryRepository.removerConexao(TENANT_ID, 3);
+    expect(prisma.directoryConnection.deleteMany).toHaveBeenCalledWith({ where: { id: 3, tenantId: TENANT_ID } });
+  });
+
+  it('directoryRepository.equipeExiste valida a equipe dentro da empresa', async () => {
+    await directoryRepository.equipeExiste(TENANT_ID, 5);
+    expect(prisma.team.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tenantId: TENANT_ID, id: 5 } })
     );
   });
 });

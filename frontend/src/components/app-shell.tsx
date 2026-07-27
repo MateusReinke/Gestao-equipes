@@ -15,6 +15,7 @@ import {
   LayoutPanelTop,
   LogOut,
   Menu,
+  Network,
   Repeat2,
   ScrollText,
   ShieldCheck,
@@ -53,6 +54,7 @@ const NAV: NavItem[] = [
   { href: '/relatorios', label: 'Relatórios', icon: BarChart3, permissoes: [PERMISSIONS.REPORT_VIEW], grupo: 'Administração' },
 
   { href: '/usuarios', label: 'Usuários e papéis', icon: ShieldCheck, permissoes: [PERMISSIONS.USER_VIEW, PERMISSIONS.ROLE_MANAGE], grupo: 'Administração' },
+  { href: '/diretorio', label: 'Diretório', icon: Network, permissoes: [PERMISSIONS.DIRECTORY_VIEW], grupo: 'Administração' },
   { href: '/auditoria', label: 'Auditoria', icon: ScrollText, permissoes: [PERMISSIONS.AUDIT_VIEW], grupo: 'Administração' },
 ];
 

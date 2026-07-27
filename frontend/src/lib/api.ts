@@ -10,6 +10,15 @@ async function requireToken(): Promise<string> {
   return token;
 }
 
+/// Carrega o status junto da mensagem: há telas que precisam distinguir
+/// "recurso desligado neste ambiente" (503) de "deu erro" para dizer a coisa
+/// certa em vez de um alerta vermelho genérico.
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 export async function fetchApi<T>(path: string): Promise<T> {
   const token = await requireToken();
   const response = await fetch(`${API_URL}${path}`, {
@@ -18,20 +27,25 @@ export async function fetchApi<T>(path: string): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`Erro ao consultar ${path}`);
+    // A mensagem do backend explica o motivo; o caminho é só o último recurso.
+    const payload = await response.json().catch(() => ({}));
+    throw new ApiError(payload.error || `Erro ao consultar ${path}`, response.status);
   }
 
   return (await response.json()) as T;
 }
 
 /// Versão tolerante: uma seção que falha não derruba a página inteira.
-export async function fetchApiSafe<T>(path: string, fallback: T): Promise<{ data: T; error: string | null }> {
+export async function fetchApiSafe<T>(
+  path: string,
+  fallback: T
+): Promise<{ data: T; error: string | null; status: number }> {
   try {
     const data = await fetchApi<T>(path);
-    return { data, error: null };
+    return { data, error: null, status: 200 };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha inesperada ao carregar dados.';
-    return { data: fallback, error: message };
+    return { data: fallback, error: message, status: error instanceof ApiError ? error.status : 0 };
   }
 }
 

@@ -20,6 +20,7 @@ import { tenantController } from '../controllers/tenant.controller';
 import { dashboardBuilderController } from '../controllers/dashboard-builder.controller';
 import { reportController } from '../controllers/report.controller';
 import { hrVacationController, notificationController } from '../controllers/hr-vacation.controller';
+import { directoryController } from '../modules/directory/directory.controller';
 
 export const router = Router();
 
@@ -145,6 +146,16 @@ router.get('/api/relatorios/:id/csv', auth(), requirePermission(P.REPORT_EXPORT)
 
 // ---------- Auditoria ----------
 router.get('/api/auditoria', auth(), requirePermission(P.AUDIT_VIEW), asyncHandler(auditController.list));
+
+// ---------- Diretório (sincronização organizacional) ----------
+// Ler a configuração exige `directory.view`; alterá-la, `directory.manage`.
+// Testar entra em `manage` porque o corpo pode carregar um segredo novo.
+router.get('/api/diretorio/conexoes', auth(), requirePermission(P.DIRECTORY_VIEW), asyncHandler(directoryController.list));
+router.post('/api/diretorio/conexoes', auth(), requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.create));
+router.patch('/api/diretorio/conexoes/:id', auth(), requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.update));
+router.delete('/api/diretorio/conexoes/:id', auth(), requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.remove));
+router.post('/api/diretorio/conexoes/testar', auth(), requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.test));
+router.post('/api/diretorio/conexoes/:id/testar', auth(), requirePermission(P.DIRECTORY_MANAGE), asyncHandler(directoryController.test));
 
 // ---------- Integrações públicas (preenchimento automático de cadastro) ----------
 router.get('/api/lookup/cnpj/:cnpj', auth(), requirePermission(P.CLIENT_CREATE, P.CLIENT_EDIT), asyncHandler(lookupController.cnpj));

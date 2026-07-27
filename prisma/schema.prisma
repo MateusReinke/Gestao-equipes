@@ -169,6 +169,12 @@ model Tenant {
   ajustesFerias     VacationAdjustment[]
   notificacoes      Notification[]
 
+  diretorioConexoes      DirectoryConnection[]
+  diretorioPessoas       DirectoryPerson[]
+  diretorioDepartamentos DirectoryDepartment[]
+  diretorioCargos        DirectoryJobTitle[]
+  diretorioExecucoes     DirectorySyncRun[]
+
   @@map("tenants")
 }
 
@@ -200,6 +206,7 @@ model User {
   dashboardFavoritos         DashboardFavorite[]
   notificacoes               Notification[]           @relation("NotificationTarget")
   ajustesFeriasRegistrados   VacationAdjustment[]     @relation("VacationAdjustmentAuthor")
+  sincronizacoesDisparadas   DirectorySyncRun[]       @relation("DirectorySyncTrigger")
 
   @@map("usuarios")
 }
@@ -337,12 +344,13 @@ model Team {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  tenant            Tenant         @relation(fields: [tenantId], references: [id])
-  cliente           Client?        @relation(fields: [clienteId], references: [id])
+  tenant            Tenant                @relation(fields: [tenantId], references: [id])
+  cliente           Client?               @relation(fields: [clienteId], references: [id])
   colaboradores     Collaborator[]
   gestores          ManagerTeam[]
   turnos            Shift[]
   compartilhamentos ShareGrant[]
+  diretorioPadraoDe DirectoryConnection[] @relation("DirectoryDefaultTeam")
 
   @@index([tenantId])
   @@map("equipes")
@@ -387,6 +395,7 @@ model Collaborator {
   trocasSolicitadas   ShiftSwap[]          @relation("SwapRequester")
   trocasRecebidas     ShiftSwap[]          @relation("SwapTarget")
   ajustesFerias       VacationAdjustment[]
+  diretorioPessoa     DirectoryPerson?
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -768,4 +777,281 @@ model Notification {
   @@index([destinatarioId, lidaEm, createdAt(sort: Desc)])
   @@index([tenantId])
   @@map("notificacoes")
+}
+
+// ============================================================================
+// MÓDULO DE DIRETÓRIO (sincronização organizacional)
+// ============================================================================
+//
+// Tudo aqui é ESPELHO do provedor de identidade (Entra ID hoje; Google, Okta
+// e LDAP depois). O motor de sincronização escreve exclusivamente nestas
+// tabelas — nunca em colaboradores, equipes, escalas, turnos, férias ou
+// qualquer outra tabela operacional.
+//
+// A única ponte entre os dois mundos é `DirectoryPerson.colaboradorId`, e
+// atravessá-la é ato explícito da reconciliação, com lista fechada de campos.
+// Por isso um diretório de 5.000 contas não vira 5.000 colaboradores: entra
+// tudo no espelho (barato, isolado), e virar colaborador é decisão de quem
+// opera.
+
+enum DirectoryProviderType {
+  entra
+  google
+  okta
+  ldap
+}
+
+enum DirectorySyncMode {
+  completa
+  incremental
+}
+
+enum DirectorySyncStatus {
+  executando
+  sucesso
+  parcial
+  erro
+}
+
+enum DirectorySyncLevel {
+  info
+  aviso
+  erro
+}
+
+/// Conexão com um provedor de identidade, por empresa.
+///
+/// As credenciais moram aqui, e não no ambiente, porque cada empresa do SaaS
+/// tem o próprio tenant Entra e a própria App Registration — credencial em
+/// `.env` limitaria a plataforma inteira a um único cliente. O segredo é
+/// gravado cifrado (AES-256-GCM) com uma chave que fica no ambiente: um dump
+/// do banco, sozinho, não entrega segredo nenhum.
+model DirectoryConnection {
+  id       Int                   @id @default(autoincrement())
+  tenantId Int                   @map("tenant_id")
+  provider DirectoryProviderType @default(entra)
+  nome     String
+  ativo    Boolean               @default(false)
+
+  /// Identificador do tenant NO PROVEDOR (o `ENTRA_TENANT_ID` do cliente) —
+  /// não confundir com `tenantId`, que é a empresa dentro desta aplicação.
+  provedorTenantId    String  @map("provedor_tenant_id")
+  clientId            String  @map("client_id")
+  clientSecretCifrado String  @map("client_secret_cifrado")
+  /// Sobrescreve a authority padrão do ambiente (nuvens soberanas, testes).
+  authorityUrl        String? @map("authority_url")
+
+  /// Flags de sincronização por empresa: o que sincronizar, se cria e desativa
+  /// colaborador automaticamente, padrões de país/fuso/idioma, verbosidade do
+  /// log. Os valores do ambiente entram como padrão quando a chave falta.
+  opcoes Json
+
+  /// Equipe de entrada para colaborador criado automaticamente.
+  /// Obrigatória quando `autoCriarColaboradores` está ligada, porque
+  /// `colaboradores.equipe_id` é NOT NULL e o diretório não conhece equipes.
+  equipePadraoId Int? @map("equipe_padrao_id")
+
+  /// Cursor OPACO de sincronização incremental. Cada provedor guarda o que
+  /// precisar: deltaLink no Entra, syncToken no Google, modifyTimestamp no
+  /// LDAP. O motor nunca interpreta o conteúdo.
+  cursorPessoas String? @map("cursor_pessoas")
+  cursorGrupos  String? @map("cursor_grupos")
+
+  ultimaSincronizacaoEm DateTime? @map("ultima_sincronizacao_em")
+  ultimoTesteEm         DateTime? @map("ultimo_teste_em")
+  ultimoTesteOk         Boolean?  @map("ultimo_teste_ok")
+  ultimoErro            String?   @map("ultimo_erro")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant                @relation(fields: [tenantId], references: [id])
+  equipePadrao  Team?                 @relation("DirectoryDefaultTeam", fields: [equipePadraoId], references: [id])
+  pessoas       DirectoryPerson[]
+  departamentos DirectoryDepartment[]
+  cargos        DirectoryJobTitle[]
+  execucoes     DirectorySyncRun[]
+
+  /// Uma conexão por provedor por empresa — abre espaço para uma empresa ter
+  /// Entra e Google ao mesmo tempo sem mudar o modelo.
+  @@unique([tenantId, provider])
+  @@index([tenantId])
+  @@map("diretorio_conexoes")
+}
+
+/// Pessoa como o provedor a descreve. Réplica, não cadastro.
+model DirectoryPerson {
+  id           Int @id @default(autoincrement())
+  tenantId     Int @map("tenant_id")
+  connectionId Int @map("connection_id")
+
+  /// Object ID do provedor — a chave de vínculo. Nunca e-mail ou nome, que
+  /// mudam ao longo do tempo e reapontariam o vínculo para a pessoa errada.
+  externalId String @map("external_id")
+
+  nomeExibicao      String  @map("nome_exibicao")
+  primeiroNome      String? @map("primeiro_nome")
+  sobrenome         String?
+  email             String?
+  userPrincipalName String? @map("user_principal_name")
+  cargo             String?
+  departamento      String?
+  empresa           String?
+  escritorio        String?
+  telefone          String?
+  celular           String?
+  pais              String?
+  cidade            String?
+  estado            String?
+  idioma            String?
+  fusoHorario       String? @map("fuso_horario")
+  contaHabilitada   Boolean @default(true) @map("conta_habilitada")
+
+  /// Gestor NO DIRETÓRIO: pessoa → pessoa, hierarquia de RH.
+  /// Não confundir com `gestor_equipes`, que é usuário → equipe e responde
+  /// pela operação. Os dois não são deriváveis um do outro.
+  gestorExternalId String? @map("gestor_external_id")
+
+  fotoEtag         String?   @map("foto_etag")
+  fotoAtualizadaEm DateTime? @map("foto_atualizada_em")
+
+  /// A ponte para o mundo operacional. Nulo é o caso normal: a maior parte
+  /// das contas de um diretório corporativo não é da operação.
+  colaboradorId Int? @unique @map("colaborador_id")
+
+  /// Campos que a sincronização não pode sobrescrever neste vínculo — a
+  /// válvula para quando o diretório está errado e o cadastro está certo.
+  camposBloqueados String[] @default([]) @map("campos_bloqueados")
+
+  /// Payload cru do provedor, para diagnosticar divergência sem reconsultar.
+  bruto Json?
+
+  /// Preenchido quando o objeto some do diretório. Nunca apagamos a linha:
+  /// o histórico operacional referencia essa pessoa.
+  removidoEm    DateTime? @map("removido_em")
+  primeiraVezEm DateTime  @default(now()) @map("primeira_vez_em")
+  ultimaVezEm   DateTime  @default(now()) @map("ultima_vez_em")
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id])
+  conexao     DirectoryConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  colaborador Collaborator?       @relation(fields: [colaboradorId], references: [id], onDelete: SetNull)
+
+  @@unique([connectionId, externalId])
+  @@index([tenantId])
+  @@index([connectionId, departamento])
+  @@index([connectionId, gestorExternalId])
+  @@map("diretorio_pessoas")
+}
+
+/// Catálogo de departamentos, DERIVADO dos valores distintos de `department`.
+///
+/// No Microsoft Graph departamento não é objeto: é string livre no usuário,
+/// e não existe endpoint `/departments`. Então "departamento deixou de
+/// existir" significa "nenhuma pessoa ativa referencia mais essa string" — e
+/// o efeito é marcar inativo, nunca apagar.
+///
+/// Como é string livre, erro de digitação no diretório vira departamento novo.
+/// `mescladoEmId` permite unificar dois registros sem perder o histórico de
+/// qual grafia veio do provedor.
+model DirectoryDepartment {
+  id           Int     @id @default(autoincrement())
+  tenantId     Int     @map("tenant_id")
+  connectionId Int     @map("connection_id")
+  nome         String
+  ativo        Boolean @default(true)
+  /// Quantas pessoas ativas referenciavam este departamento na última execução.
+  pessoas      Int     @default(0)
+
+  mescladoEmId Int? @map("mesclado_em_id")
+
+  primeiraVezEm DateTime @default(now()) @map("primeira_vez_em")
+  ultimaVezEm   DateTime @default(now()) @map("ultima_vez_em")
+
+  tenant     Tenant                @relation(fields: [tenantId], references: [id])
+  conexao    DirectoryConnection   @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  mescladoEm DirectoryDepartment?  @relation("DepartmentMerge", fields: [mescladoEmId], references: [id])
+  mesclados  DirectoryDepartment[] @relation("DepartmentMerge")
+
+  @@unique([connectionId, nome])
+  @@index([tenantId])
+  @@map("diretorio_departamentos")
+}
+
+/// Catálogo de cargos, derivado de `jobTitle` pela mesma razão acima.
+/// Informativo por definição: cargo nunca controla permissão nesta aplicação
+/// — quem controla é o papel (RBAC), atribuído dentro do sistema.
+model DirectoryJobTitle {
+  id           Int     @id @default(autoincrement())
+  tenantId     Int     @map("tenant_id")
+  connectionId Int     @map("connection_id")
+  nome         String
+  ativo        Boolean @default(true)
+  pessoas      Int     @default(0)
+
+  primeiraVezEm DateTime @default(now()) @map("primeira_vez_em")
+  ultimaVezEm   DateTime @default(now()) @map("ultima_vez_em")
+
+  tenant  Tenant              @relation(fields: [tenantId], references: [id])
+  conexao DirectoryConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, nome])
+  @@index([tenantId])
+  @@map("diretorio_cargos")
+}
+
+/// Uma execução da sincronização. É o registro que responde "o que aconteceu
+/// às 3h da manhã" sem depender de log de aplicação.
+model DirectorySyncRun {
+  id           Int                 @id @default(autoincrement())
+  tenantId     Int                 @map("tenant_id")
+  connectionId Int                 @map("connection_id")
+  modo         DirectorySyncMode
+  status       DirectorySyncStatus @default(executando)
+
+  /// Nulo quando quem disparou foi o agendador.
+  disparadoPorId Int? @map("disparado_por_id")
+
+  objetosLidos       Int @default(0) @map("objetos_lidos")
+  objetosCriados     Int @default(0) @map("objetos_criados")
+  objetosAtualizados Int @default(0) @map("objetos_atualizados")
+  objetosInalterados Int @default(0) @map("objetos_inalterados")
+  objetosRemovidos   Int @default(0) @map("objetos_removidos")
+  conflitos          Int @default(0)
+
+  /// Contagens por entidade e qualquer métrica específica do provedor.
+  detalhes Json?
+  erro     String?
+
+  iniciadoEm   DateTime  @default(now()) @map("iniciado_em")
+  finalizadoEm DateTime? @map("finalizado_em")
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id])
+  conexao      DirectoryConnection  @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  disparadoPor User?                @relation("DirectorySyncTrigger", fields: [disparadoPorId], references: [id], onDelete: SetNull)
+  eventos      DirectorySyncEvent[]
+
+  @@index([tenantId, iniciadoEm(sort: Desc)])
+  @@index([connectionId, iniciadoEm(sort: Desc)])
+  @@map("diretorio_execucoes")
+}
+
+/// Registro por objeto dentro de uma execução: o que mudou, o que foi pulado
+/// e por quê. Fica separado de `auditoria` de propósito — misturar milhares
+/// de linhas de robô com o rastro de ações humanas inutilizaria as duas.
+/// Volume controlado pela flag `logOperacoes` da conexão + poda por retenção.
+model DirectorySyncEvent {
+  id         Int                @id @default(autoincrement())
+  runId      Int                @map("run_id")
+  nivel      DirectorySyncLevel @default(info)
+  entidade   String
+  externalId String?            @map("external_id")
+  acao       String
+  mensagem   String
+  dados      Json?
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  execucao DirectorySyncRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, nivel])
+  @@map("diretorio_execucao_eventos")
 }

@@ -219,6 +219,85 @@ Três detalhes que a integração precisa acertar e que não são óbvios:
 
 Se todas as fontes falharem, o formulário continua utilizável — os campos são apenas preenchidos manualmente.
 
+## Diretório (Microsoft Entra ID)
+
+Sincronização organizacional com o provedor de identidade da empresa. Desligada por padrão: com `ENABLE_ENTRA_SYNC=false` as rotas respondem **503** e a tela avisa que o módulo não está habilitado neste ambiente.
+
+### O princípio: espelho, não escrita direta
+
+A garantia de que a sincronização não sobrescreve dado operacional não depende de disciplina de quem escreve o código — é estrutural.
+
+```
+Microsoft Graph → motor de sincronização → espelho (diretorio_*) ⇢ reconciliação ⇢ operação
+                  (só conhece diretorio_*)                          (ponte única)
+```
+
+O motor escreve exclusivamente em `diretorio_pessoas`, `diretorio_departamentos`, `diretorio_cargos`, `diretorio_execucoes` e `diretorio_execucao_eventos`. Escalas, turnos, férias, plantões, aprovações, clientes, SLA e indicadores não são alcançáveis a partir dele. A única travessia é `diretorio_pessoas.colaborador_id`, e atravessá-la é ato explícito da reconciliação, com lista fechada de campos e trava por campo.
+
+Um teste (`modules/directory/__tests__/isolamento.test.ts`) lê os arquivos do módulo e quebra o build se alguém importar repositório operacional fora da lista de exceções declarada. Provedores também não podem importar Prisma como valor — eles traduzem payload, não persistem.
+
+Efeito colateral desejado: um diretório de 5.000 contas não vira 5.000 colaboradores. Tudo entra no espelho (barato, isolado, sem efeito); virar colaborador é decisão de quem opera.
+
+### Credenciais por empresa, cifradas
+
+Cada cliente do SaaS tem o próprio tenant Entra e a própria App Registration — credencial em `.env` limitaria a plataforma inteira a um único cliente. Por isso o ambiente guarda só o interruptor e a chave mestra; tenant, client id e secret ficam em `diretorio_conexoes`, por empresa.
+
+O `clientSecret` é gravado com **AES-256-GCM**, versionado (`v1.iv.tag.ct`) e com a empresa como dado autenticado adicional — um pacote cifrado para a empresa 7 não decifra como se fosse da 9, então copiar a linha entre tenants falha em vez de funcionar em silêncio. O segredo **nunca** sai da API: a tela recebe uma impressão digital de 8 caracteres, o suficiente para conferir "é o mesmo que cadastrei?".
+
+Trocar `DIRECTORY_ENCRYPTION_KEY` torna ilegíveis os segredos já gravados. A tela detecta isso (`segredoIlegivel`) e pede o recadastro em vez de exibir um "configurado" que não funciona.
+
+### Teste de conexão como instrumento de diagnóstico
+
+Dá para testar **antes de salvar** — quem monta uma App Registration erra na primeira tentativa quase sempre, e obrigar a gravar credencial errada para descobrir que está errada seria hostil.
+
+Cada permissão é verificada em separado, porque o consentimento de administrador costuma ser concedido pela metade e um "falhou" único deixaria quem configura adivinhando qual liberar:
+
+| Recurso | Permissão | |
+| --- | --- | --- |
+| Usuários | `User.Read.All` | obrigatória |
+| Organização | `Organization.Read.All` | opcional — confirma que as credenciais apontam para o tenant certo |
+| Grupos | `Group.Read.All` | opcional |
+
+Os códigos `AADSTS` mais comuns viram instrução acionável em vez do parágrafo em inglês com trace id: segredo inválido aponta para o campo *Value* (e não *Secret ID*); segredo vencido manda gerar outro em *Certificates & secrets*; tenant não encontrado avisa que o campo é um GUID, não o nome do domínio.
+
+### Departamento e cargo são derivados, não sincronizados
+
+No Microsoft Graph `department` e `jobTitle` são strings livres no usuário — não existe endpoint `/departments`. O catálogo é montado a partir dos valores distintos encontrados, e "departamento deixou de existir" significa que nenhuma pessoa ativa o referencia mais: marca `ativo = false`, nunca `DELETE`. Como é texto livre, erro de digitação no diretório cria departamento novo, e `mesclado_em_id` permite unificar dois registros sem perder o histórico de qual grafia veio do provedor.
+
+Cargo é informativo por definição: quem controla permissão nesta aplicação é o papel do RBAC, atribuído aqui dentro.
+
+### Duas coisas diferentes chamadas "gestor"
+
+| | Origem | Forma | Significado |
+| --- | --- | --- | --- |
+| `manager` do Entra | sincronizado | pessoa → pessoa | hierarquia de RH |
+| `gestor_equipes` | da aplicação | usuário → equipe | quem responde pela operação |
+
+Não são deriváveis um do outro: o gestor de RH de um analista pode não ser o responsável pela equipe de plantão dele. O `manager` do Entra alimenta o organograma e **sugere** vínculos, sempre confirmados por uma pessoa.
+
+### Conta desabilitada não é desligamento
+
+`accountEnabled = false` pode ser licença médica, afastamento ou suspensão de licença — não só saída. Se `AUTO_DISABLE_USERS` gravasse `data_desligamento`, o cálculo de férias truncaria o período aquisitivo e **reduziria direito adquirido em silêncio**.
+
+Então a flag grava **apenas** `colaboradores.ativo = false`: histórico preservado, escalas antigas preservadas, auditoria preservada, novos vínculos operacionais bloqueados, consulta permitida. `data_desligamento` continua sendo ato humano no cadastro funcional.
+
+### Permissões
+
+| Permissão | Papéis padrão |
+| --- | --- |
+| `directory.view` | Administrador da Empresa, Gestor |
+| `directory.manage` (credenciais) | Administrador da Empresa |
+| `directory.sync` | Administrador da Empresa, Gestor |
+| `directory.reconcile` | Administrador da Empresa, Gestor |
+
+Configurar credencial é separado de ver o diretório de propósito: o Gestor acompanha e reconcilia, mas não vê nem troca segredo.
+
+### Estado atual
+
+Entregue: schema do espelho, conexão por empresa com segredo cifrado, contrato `DirectoryProvider` (com o Entra como primeira implementação), cliente Graph com `Retry-After` honrado e tradução de erro, e o teste de conexão.
+
+Ainda não entregue: carga das pessoas, sincronização incremental por delta, agendador, reconciliação com o cadastro, grupos, organograma e fotos.
+
 ## Módulos
 
 | Módulo | O que faz |
@@ -234,6 +313,7 @@ Se todas as fontes falharem, o formulário continua utilizável — os campos s�
 | **Controle de férias** | Ciclos aquisitivo/concessivo por pessoa, saldo, prazo e alertas de vencimento pela CLT. |
 | **Usuários e papéis** | Gestão de acesso, atribuição de papéis e criação de papéis customizados. |
 | **Relatórios** | Cinco relatórios operacionais com filtro de período e equipe, prévia e exportação em CSV. |
+| **Diretório** | Conexão com o Microsoft Entra ID: credenciais cifradas por empresa e diagnóstico de permissões. |
 | **Auditoria** | Quem fez, o quê, quando, de onde — com estado antes/depois. |
 
 ## Exclusão protegida por histórico
@@ -251,6 +331,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 ## Estrutura do repositório
 
 - `backend/` — `controllers/` (HTTP) → `services/` (regra de negócio) → `repositories/` (Prisma, sempre com `tenantId` explícito)
+- `backend/src/modules/directory/` — módulo autocontido (provedores, cifragem, repositório e rotas próprias), com fronteira verificada por teste
 - `frontend/` — `/login`, `/console` e `/d/<token>` (wallboard) públicos ao seu escopo; demais rotas protegidas pelo grupo `(app)`, por `middleware.ts` e por guarda de permissão em cada página
 - `prisma/` — schema, migrations, `seed.ts` (idempotente) e `seed.dev.ts` (destrutivo, só local)
 - `docker/` — Dockerfiles e compose espelhado
@@ -261,7 +342,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 cd backend && npm test
 ```
 
-214 testes cobrindo:
+285 testes cobrindo:
 
 - **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
 - **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
@@ -277,3 +358,8 @@ cd backend && npm test
 - **Férias pela CLT:** montagem dos ciclos com admissão em fim de mês e em 29 de fevereiro, tabela de faltas nas bordas exatas, abono de um terço, fracionamento válido e inválido, saldo que nunca fica negativo, e classificação de férias antigas pelo período concessivo.
 - **Alertas de prazo:** transição entre os quatro estados nos dias exatos do horizonte, um alerta por ciclo (o mais grave), chave de idempotência estável entre execuções e nova quando a severidade muda.
 - **Validação de CPF:** dígitos verificadores, máscara, sequências repetidas e o caso em que o resto do cálculo é 10.
+- **Cifragem do diretório:** ida e volta, pacote diferente a cada gravação, recusa com contexto de outra empresa, texto e tag adulterados, versão desconhecida, e as três formas de chave (hex, base64 e frase derivada) — inclusive a exigência de a derivação abrir, depois de um restart, o que foi gravado antes.
+- **Cliente Graph:** reaproveitamento do token, tradução dos códigos AADSTS, `Retry-After` em segundos e em formato de data, 401 que descarta o token e repete, repetição em erro de servidor e 400 que não é repetido.
+- **Teste de conexão:** permissão obrigatória ausente reprova, opcional ausente não reprova, credencial recusada nem chega a verificar permissão, e cada recurso verificado em separado.
+- **Conexão de diretório:** segredo nunca sai na resposta, domínio recusado no lugar do GUID, criação automática barrada sem equipe de entrada, edição sem segredo preserva o guardado, troca de credencial invalida o teste anterior e remoção segurada por vínculo com colaborador.
+- **Fronteira diretório/operação:** nenhum arquivo do módulo importa repositório operacional fora da lista declarada, provedores não importam Prisma como valor, e o repositório do módulo só lê de tabela operacional.

@@ -55,6 +55,13 @@ export const PERMISSIONS = {
   ROLE_MANAGE: 'role.manage',
   TENANT_SETTINGS_MANAGE: 'tenant.settings.manage',
   AUDIT_VIEW: 'audit.view',
+
+  /// Ver o espelho é inofensivo; configurar credencial não é; reconciliar é a
+  /// única que alcança dado operacional. Por isso são quatro, e não uma.
+  DIRECTORY_VIEW: 'directory.view',
+  DIRECTORY_MANAGE: 'directory.manage',
+  DIRECTORY_SYNC: 'directory.sync',
+  DIRECTORY_RECONCILE: 'directory.reconcile',
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
