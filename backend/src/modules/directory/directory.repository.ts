@@ -267,6 +267,105 @@ export const directoryRepository = {
     });
   },
 
+  // ------------------------------------------------------------ vínculo
+
+  /// Campos que a reconciliação precisa de cada pessoa. Explícito para não
+  /// arrastar o payload cru inteiro por uma varredura de milhares de linhas.
+  pessoasVinculadas(tenantId: number, connectionId: number) {
+    return prisma.directoryPerson.findMany({
+      where: { tenantId, connectionId, colaboradorId: { not: null } },
+      select: {
+        id: true,
+        externalId: true,
+        nomeExibicao: true,
+        email: true,
+        cargo: true,
+        telefone: true,
+        celular: true,
+        contaHabilitada: true,
+        removidoEm: true,
+        colaboradorId: true,
+        camposBloqueados: true,
+      },
+    });
+  },
+
+  pessoasSemVinculo(tenantId: number, connectionId: number) {
+    return prisma.directoryPerson.findMany({
+      where: { tenantId, connectionId, colaboradorId: null, removidoEm: null },
+      select: {
+        id: true,
+        externalId: true,
+        nomeExibicao: true,
+        email: true,
+        cargo: true,
+        telefone: true,
+        celular: true,
+        contaHabilitada: true,
+        removidoEm: true,
+        colaboradorId: true,
+        camposBloqueados: true,
+      },
+      orderBy: { nomeExibicao: 'asc' },
+    });
+  },
+
+  buscarPessoa(tenantId: number, pessoaId: number) {
+    return prisma.directoryPerson.findFirst({
+      where: { tenantId, id: pessoaId },
+      select: {
+        id: true,
+        externalId: true,
+        connectionId: true,
+        nomeExibicao: true,
+        email: true,
+        cargo: true,
+        telefone: true,
+        celular: true,
+        contaHabilitada: true,
+        removidoEm: true,
+        colaboradorId: true,
+        camposBloqueados: true,
+      },
+    });
+  },
+
+  /// Amarra a pessoa a um colaborador. `updateMany` com `tenantId` no filtro
+  /// porque o vínculo entrega dado operacional — id de outra empresa não passa.
+  async vincular(tenantId: number, pessoaId: number, colaboradorId: number) {
+    const { count } = await prisma.directoryPerson.updateMany({
+      where: { tenantId, id: pessoaId },
+      data: { colaboradorId },
+    });
+    return count;
+  },
+
+  async desvincular(tenantId: number, pessoaId: number) {
+    const { count } = await prisma.directoryPerson.updateMany({
+      where: { tenantId, id: pessoaId },
+      data: { colaboradorId: null, camposBloqueados: [] },
+    });
+    return count;
+  },
+
+  async definirCamposBloqueados(tenantId: number, pessoaId: number, campos: string[]) {
+    const { count } = await prisma.directoryPerson.updateMany({
+      where: { tenantId, id: pessoaId },
+      data: { camposBloqueados: campos },
+    });
+    return count;
+  },
+
+  /// Já existe outra pessoa do diretório apontando para este colaborador?
+  /// Um colaborador com dois donos no diretório receberia gravações
+  /// alternadas a cada execução.
+  outraPessoaComOMesmoColaborador(tenantId: number, colaboradorId: number, exceroPessoaId: number) {
+    return prisma.directoryPerson.findFirst({
+      where: { tenantId, colaboradorId, id: { not: exceroPessoaId } },
+      select: { id: true, nomeExibicao: true },
+    });
+  },
+
   // ---------------------------------------------------------- leitura da UI
 
   async listarPessoas(

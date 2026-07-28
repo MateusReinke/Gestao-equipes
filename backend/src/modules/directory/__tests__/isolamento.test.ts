@@ -18,14 +18,13 @@ const RAIZ = join(__dirname, '..');
 
 /// Quem pode importar o quê fora do módulo. Tudo que não está aqui é proibido.
 const EXCECOES: Record<string, string[]> = {
-  // Controller é camada de borda: auditoria é transversal a todo o sistema.
+  // Controllers são camada de borda: auditoria é transversal a todo o sistema.
   'directory.controller.ts': ['../../services/audit.service'],
-  // A ponte. Quando `reconcile.service.ts` existir, é o único arquivo do
-  // módulo autorizado a escrever em tabela operacional.
-  'sync/reconcile.service.ts': [
-    '../../../repositories/collaborator.repository',
-    '../../../repositories/team.repository',
-  ],
+  'link.controller.ts': ['../../services/audit.service'],
+  // A ponte: o único arquivo do módulo autorizado a escrever em tabela
+  // operacional. Tudo que alcança colaborador passa por aqui, inclusive o que
+  // o serviço de vínculo (`link.service.ts`) orquestra.
+  'sync/reconcile.service.ts': ['../../../repositories/collaborator.repository'],
 };
 
 function arquivosTs(diretorio: string): string[] {

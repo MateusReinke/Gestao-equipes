@@ -5,6 +5,7 @@ import { requirePermissionSession } from '@/lib/session';
 import { PERMISSIONS, can } from '@/lib/session-types';
 import { ConnectionForm, RetestButton } from './connection-form';
 import { MirrorPanel } from './mirror-panel';
+import { LinkPanel } from './link-panel';
 import type { Conexao, Equipe, ResumoDoDiretorio } from './types';
 
 const RESUMO_VAZIO: ResumoDoDiretorio = {
@@ -76,9 +77,12 @@ export default async function DiretorioPage() {
 
   const conexao = conexoesResult.data[0] ?? null;
   const podeSincronizar = can(session.permissoes, PERMISSIONS.DIRECTORY_SYNC);
+  const podeReconciliar = can(session.permissoes, PERMISSIONS.DIRECTORY_RECONCILE);
 
   const [equipesResult, resumoResult] = await Promise.all([
-    podeConfigurar ? fetchApiSafe<Equipe[]>('/api/equipes', []) : Promise.resolve({ data: [] as Equipe[], error: null, status: 200 }),
+    podeConfigurar || podeReconciliar
+      ? fetchApiSafe<Equipe[]>('/api/equipes', [])
+      : Promise.resolve({ data: [] as Equipe[], error: null, status: 200 }),
     conexao
       ? fetchApiSafe<ResumoDoDiretorio>(`/api/diretorio/conexoes/${conexao.id}/resumo`, RESUMO_VAZIO)
       : Promise.resolve({ data: RESUMO_VAZIO, error: null, status: 200 }),
@@ -139,6 +143,16 @@ export default async function DiretorioPage() {
             conexaoAtiva={conexao.ativo}
             intervaloMinutos={conexao.opcoes.intervaloMinutos}
             ultimaSincronizacaoEm={conexao.ultimaSincronizacaoEm}
+          />
+        </div>
+      ) : null}
+
+      {conexao && podeReconciliar ? (
+        <div className="mb-4">
+          <LinkPanel
+            conexaoId={conexao.id}
+            equipes={equipesResult.data}
+            vinculadas={resumoResult.data.contadores.vinculadas}
           />
         </div>
       ) : null}

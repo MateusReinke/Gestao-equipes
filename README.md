@@ -376,6 +376,74 @@ No Microsoft Graph `department` e `jobTitle` são strings livres no usuário —
 
 Cargo é informativo por definição: quem controla permissão nesta aplicação é o papel do RBAC, atribuído aqui dentro.
 
+### A ponte com o cadastro
+
+O espelho vira cadastro por **vínculo**, e vínculo é ato de gente: em
+**Diretório > Vínculo com o cadastro**, escolhe-se o colaborador para cada
+pessoa. Antes de aplicar, a tela mostra o que mudaria — usando a mesma função
+de decisão que a gravação, então a prévia não tem como mentir.
+
+Coincidência de e-mail vira **sugestão**, nunca vínculo. O vínculo gravado é
+sempre por Object ID; o e-mail só ajuda um humano a reconhecer a pessoa uma
+vez. Endereço é reciclado, e ligar por ele automaticamente entregaria o
+histórico de alguém a outra pessoa.
+
+Toda a travessia mora em `sync/reconcile.service.ts` — o **único** arquivo do
+módulo que importa repositório operacional, com o teste de fronteira
+garantindo que continue assim. Concentrar num lugar só é o que torna a promessa
+verificável: "a sincronização não sobrescreve dado operacional" não é uma
+intenção espalhada, é uma lista de campos que cabe numa tela.
+
+| | Campos | Comportamento |
+| --- | --- | --- |
+| **Diretório manda** | nome, e-mail, cargo | reescritos a cada execução |
+| **Preenche se vazio** | telefone | não sobrescreve o que o RH corrigiu |
+| **Nunca tocados** | equipe, contrato, modelo de trabalho, plantão, sobreaviso, **admissão**, **desligamento**, nascimento, matrícula, CPF | fora da lista, logo inalcançáveis |
+
+Nulo do diretório não apaga o que o cadastro tem: ausência de informação não é
+informação de ausência.
+
+**Trava por campo.** Se o diretório está errado e o cadastro está certo, trave
+o campo no vínculo e a sincronização passa a pulá-lo, registrando que pulou.
+Só é possível travar o que a sincronização de fato escreve — travar
+`dataAdmissao` daria falsa sensação de proteção, já que ela é intocável por
+construção.
+
+### Conta desabilitada mexe em `ativo`, jamais em desligamento
+
+Com `AUTO_DISABLE_USERS` ligada, conta desabilitada (ou pessoa que saiu do
+diretório) marca o colaborador como inativo — e **só isso**. `dataDesligamento`
+continua sendo ato humano no cadastro funcional: gravá-la aqui truncaria o
+período aquisitivo e reduziria direito a férias em silêncio.
+
+A reativação também é automática, o que cria um caso a conhecer: se alguém
+desativar um colaborador por motivo operacional enquanto o diretório o mostra
+ativo, a próxima execução o reativa. A saída é travar o campo `ativo` — por
+isso ele está entre os travávies.
+
+### Criação automática, e as duas recusas dela
+
+`AUTO_CREATE_USERS` cria colaborador para quem ainda não tem, na equipe de
+entrada da conexão. Recusa dois casos de propósito:
+
+- **Conta desabilitada não vira colaborador** — cadastro para quem já perdeu o
+  acesso só polui a lista de escala.
+- **E-mail que já existe em outro colaborador vira conflito, não vínculo.**
+  É o mesmo princípio da sugestão: a decisão de que "são a mesma pessoa" é de
+  um humano.
+
+O colaborador criado nasce com o padrão mais conservador — CLT presencial, sem
+plantão nem sobreaviso — porque entrar na escala de plantão por omissão é pior
+que corrigir depois. E **sem data de admissão**: o diretório não sabe quando a
+pessoa foi contratada, e chutar essa data corromperia o cálculo de férias.
+
+### Desvincular não desfaz
+
+Desvincular significa "pare de atualizar", não "desfaça o que foi feito":
+reverter exigiria saber o valor anterior de cada campo, e o cadastro não é
+versionado. O colaborador permanece como está, inclusive com o que a
+sincronização já escreveu nele.
+
 ### Duas coisas diferentes chamadas "gestor"
 
 | | Origem | Forma | Significado |
@@ -409,15 +477,18 @@ Entregue: schema do espelho, conexão por empresa com segredo cifrado, contrato
 paginação e `Retry-After` honrado, teste de conexão, carga completa de pessoas
 com catálogos derivados, **sincronização incremental com queda automática para
 completa quando o cursor expira**, **agendador com trava de concorrência** e a
-tela do espelho em leitura — pessoas com busca e filtro, catálogos, e histórico
-de execuções com modo, contadores e motivo.
+tela do espelho em leitura, e a **reconciliação com o cadastro** — vínculo com
+prévia, promoção a colaborador, travas por campo e as duas automações opcionais.
+
+Enquanto ninguém vincula, a sincronização não escreve uma linha operacional. O
+que muda isso é um ato explícito por pessoa, não um efeito colateral.
 
 Nada disso alcança dado operacional: o espelho é réplica, e a ponte para o
 cadastro só nasce na reconciliação.
 
 Remover uma conexão apaga o espelho em cascata — é réplica, e uma nova sincronização traz tudo de volta. Já uma conexão com pessoas vinculadas a colaboradores responde **409** com a contagem, porque vínculo é decisão de gente: para só parar de sincronizar, desative a conexão.
 
-Ainda não entregue: reconciliação com o cadastro, grupos, organograma e fotos.
+Ainda não entregue: grupos, organograma e fotos.
 
 ## Módulos
 
@@ -463,7 +534,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 cd backend && npm test
 ```
 
-366 testes cobrindo:
+396 testes cobrindo:
 
 - **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
 - **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
@@ -487,6 +558,13 @@ cd backend && npm test
 - **Conexão de diretório:** segredo nunca sai na resposta, domínio recusado no lugar do GUID, criação automática barrada sem equipe de entrada, edição sem segredo preserva o guardado, troca de credencial invalida o teste anterior e remoção segurada por vínculo com colaborador.
 - **Rotas do diretório:** com o módulo desligado, listar/criar/testar respondem 503 com a instrução — e não 200 vazio, que sugeriria "está ligado, só não configurado" —, a guarda de sessão vem antes da de habilitação para que ninguém descubra sem se autenticar se a empresa usa diretório, e o 503 precede a validação do corpo.
 - **Motor de sincronização:** primeira carga contando criações, reexecução contando atualizações, quem sumiu virando removido, catálogos derivados do espelho gravado (e não da resposta), contas desabilitadas dentro e fora conforme a opção, leitura interrompida que não marca ausentes nem grava cursor, pessoa que falha sem derrubar a carga e sem entrar na lista de presentes, recusa de execução concorrente, e log desligado que ainda registra o erro.
+- **A lista fechada:** nenhuma mudança calculada toca campo operacional, `dataDesligamento` intocada mesmo com a conta desabilitada, e só é travável o que a sincronização de fato escreve.
+- **Precedência de campos:** diretório manda em nome/e-mail/cargo, nulo não apaga o que o cadastro tem, valor igual não vira mudança, telefone só preenche quando vazio e cai no celular quando não há comercial.
+- **Travas:** campo travado não muda mesmo divergindo, e travar `ativo` impede a auto-desativação.
+- **`ativo`:** desabilitada desativa, saída do diretório desativa, reabilitada reativa, e com a opção desligada `ativo` nunca é tocado.
+- **Reconciliação:** grava só o que mudou, colisão de e-mail vira conflito em vez de gravação forçada, uma pessoa com problema não interrompe as demais, e vínculo órfão aparece como conflito.
+- **Criação automática:** cria e vincula quem não existe, nasce sem plantão e sem admissão, e-mail já existente vira conflito e não vínculo, conta desabilitada e pessoa sem e-mail são recusadas.
+- **A ponte na sincronização:** com as opções desligadas nada é criado nem desativado, criação automática sem equipe de entrada avisa em vez de silenciar, e leitura interrompida não reconcilia.
 - **Leitura incremental:** usa o cursor guardado e se declara incremental, não deduz saída por ausência, respeita o marcador de saída explícita, e o modo completa forçado ignora o cursor.
 - **Cursor expirado:** recomeça do zero sozinho, registra o motivo, fecha a execução como completa (não como a incremental que começou) e volta a deduzir ausências.
 - **Trava de concorrência:** recusa quando outra execução já reivindicou, e libera a trava tanto no caminho feliz quanto quando a execução estoura.

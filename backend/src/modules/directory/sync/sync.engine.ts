@@ -1,6 +1,11 @@
 import type { Prisma } from '@prisma/client';
 import { directoryRepository } from '../directory.repository';
 import { CursorExpiradoError, type DirectoryProvider, type PessoaDiretorio } from '../providers/provider.types';
+import {
+  criarColaboradoresAutomaticamente,
+  reconciliarVinculados,
+  type ResultadoDaReconciliacao,
+} from './reconcile.service';
 
 /**
  * Motor de sincronização.
@@ -29,6 +34,9 @@ export type ResultadoDaSincronizacao = {
   /// Verdadeiro quando começou incremental e teve de recomeçar do zero porque
   /// o provedor invalidou o cursor.
   recomecouDoZero: boolean;
+  /// Nulo quando a empresa não ligou nenhuma das opções que alcançam o
+  /// cadastro — que é o padrão, e o caso em que nada operacional foi tocado.
+  reconciliacao: ResultadoDaReconciliacao | null;
   erro: string | null;
 };
 
@@ -44,6 +52,14 @@ export type ParametrosDeSincronizacao = {
   incluirDesabilitados: boolean;
   logOperacoes: boolean;
   disparadoPorId?: number | null;
+
+  /// As duas únicas opções que alcançam o cadastro. Nascem desligadas, e
+  /// desligadas a sincronização inteira não escreve uma linha operacional.
+  autoCriarColaboradores?: boolean;
+  autoDesativarColaboradores?: boolean;
+  /// Equipe de entrada da criação automática. Sem ela, não há criação:
+  /// `colaboradores.equipe_id` é NOT NULL e o diretório não conhece equipes.
+  equipePadraoId?: number | null;
 };
 
 export class SincronizacaoEmAndamentoError extends Error {}
@@ -174,6 +190,7 @@ async function executar(params: ParametrosDeSincronizacao): Promise<ResultadoDaS
 
   let departamentos = 0;
   let cargos = 0;
+  let reconciliacao: ResultadoDaReconciliacao | null = null;
 
   if (acumulado.concluiu) {
     // Só a leitura completa sabe quem sumiu por ausência. Na incremental, o
@@ -204,6 +221,11 @@ async function executar(params: ParametrosDeSincronizacao): Promise<ResultadoDaS
     // Cursor novo só é guardado quando a leitura fechou. Guardá-lo depois de
     // uma leitura interrompida faria a próxima execução pular o que faltou.
     await directoryRepository.atualizarCursor(params.connectionId, acumulado.cursor);
+
+    // A ÚNICA parte da sincronização que alcança o cadastro, e só quando a
+    // empresa pediu. Depois da leitura ter fechado: reconciliar a partir de um
+    // espelho pela metade aplicaria dados incompletos sobre gente de verdade.
+    reconciliacao = await reconciliar(params, registrar);
   }
 
   const status: ResultadoDaSincronizacao['status'] = !acumulado.concluiu
@@ -223,7 +245,20 @@ async function executar(params: ParametrosDeSincronizacao): Promise<ResultadoDaS
     objetosRemovidos: acumulado.removidos,
     conflitos: acumulado.conflitos,
     erro: acumulado.erro,
-    detalhes: { departamentos, cargos, recomecouDoZero } as Prisma.InputJsonValue,
+    detalhes: {
+      departamentos,
+      cargos,
+      recomecouDoZero,
+      reconciliacao: reconciliacao
+        ? {
+            atualizados: reconciliacao.atualizados,
+            criados: reconciliacao.criados,
+            desativados: reconciliacao.desativados,
+            reativados: reconciliacao.reativados,
+            conflitos: reconciliacao.conflitos.length,
+          }
+        : null,
+    } as Prisma.InputJsonValue,
   });
 
   return {
@@ -237,8 +272,71 @@ async function executar(params: ParametrosDeSincronizacao): Promise<ResultadoDaS
     departamentos,
     cargos,
     recomecouDoZero,
+    reconciliacao,
     erro: acumulado.erro,
   };
+}
+
+/**
+ * Aplica o diretório sobre o cadastro, se — e só se — a empresa tiver pedido.
+ *
+ * Com as duas opções desligadas (o padrão), devolve `null` e a sincronização
+ * inteira não escreveu uma linha operacional. É a diferença entre o módulo
+ * "espelha o diretório" e o módulo "mexe no meu cadastro", e ela é uma escolha
+ * explícita de quem administra a empresa.
+ */
+async function reconciliar(
+  params: ParametrosDeSincronizacao,
+  registrar: (nivel: 'info' | 'aviso' | 'erro', externalId: string | null, acao: string, mensagem: string) => void
+): Promise<ResultadoDaReconciliacao | null> {
+  const autoDesativar = params.autoDesativarColaboradores === true;
+  const autoCriar = params.autoCriarColaboradores === true;
+
+  // Reconciliar os já vinculados acontece sempre que houver vínculo: manter o
+  // nome e o cargo em dia é o propósito de ter vinculado. O que as opções
+  // controlam é mexer em `ativo` e criar cadastro novo.
+  const vinculados = await reconciliarVinculados({
+    tenantId: params.tenantId,
+    connectionId: params.connectionId,
+    autoDesativar,
+  });
+
+  const resultado = vinculados;
+
+  if (autoCriar) {
+    if (params.equipePadraoId == null) {
+      registrar(
+        'erro',
+        null,
+        'sem_equipe_padrao',
+        'Criação automática de colaboradores está ligada, mas nenhuma equipe de entrada foi escolhida. Nada foi criado.'
+      );
+    } else {
+      const criados = await criarColaboradoresAutomaticamente({
+        tenantId: params.tenantId,
+        connectionId: params.connectionId,
+        equipePadraoId: params.equipePadraoId,
+      });
+      resultado.criados += criados.criados;
+      resultado.conflitos.push(...criados.conflitos);
+    }
+  }
+
+  for (const mudanca of resultado.mudancas) {
+    registrar(
+      'info',
+      mudanca.externalId,
+      'reconciliada',
+      `Cadastro atualizado: ${mudanca.campos.map((campo) => campo.campo).join(', ')}`
+    );
+  }
+
+  for (const conflito of resultado.conflitos) {
+    registrar('aviso', conflito.externalId, 'conflito_reconciliacao', `${conflito.nome}: ${conflito.motivo}`);
+  }
+
+  const mexeu = resultado.atualizados + resultado.criados + resultado.conflitos.length;
+  return mexeu > 0 || autoCriar || autoDesativar ? resultado : null;
 }
 
 /// Uma passada de leitura. Isolada para que a queda de incremental para

@@ -17,7 +17,13 @@ vi.mock('../directory.repository', () => ({
   },
 }));
 
+vi.mock('../sync/reconcile.service', () => ({
+  reconciliarVinculados: vi.fn(),
+  criarColaboradoresAutomaticamente: vi.fn(),
+}));
+
 import { directoryRepository } from '../directory.repository';
+import { criarColaboradoresAutomaticamente, reconciliarVinculados } from '../sync/reconcile.service';
 import { FakeProvider, pessoaFalsa } from '../providers/fake.provider';
 import { SincronizacaoEmAndamentoError, sincronizarPessoas } from '../sync/sync.engine';
 
@@ -33,6 +39,10 @@ const mockContar = vi.mocked(directoryRepository.contarPorCampo);
 const mockCatalogo = vi.mocked(directoryRepository.sincronizarCatalogo);
 const mockEventos = vi.mocked(directoryRepository.registrarEventos);
 const mockCursor = vi.mocked(directoryRepository.atualizarCursor);
+const mockReconciliar = vi.mocked(reconciliarVinculados);
+const mockCriarAuto = vi.mocked(criarColaboradoresAutomaticamente);
+
+const RECONCILIACAO_VAZIA = { atualizados: 0, criados: 0, desativados: 0, reativados: 0, conflitos: [], mudancas: [] };
 
 const BASE = { tenantId: 7, connectionId: 3, incluirDesabilitados: true, logOperacoes: true };
 
@@ -50,6 +60,8 @@ beforeEach(() => {
   mockEventos.mockResolvedValue({ count: 0 } as never);
   mockCursor.mockResolvedValue({} as never);
   mockFechar.mockResolvedValue({} as never);
+  mockReconciliar.mockResolvedValue({ ...RECONCILIACAO_VAZIA });
+  mockCriarAuto.mockResolvedValue({ ...RECONCILIACAO_VAZIA });
 });
 
 type Parcial = Parameters<typeof pessoaFalsa>[0];
@@ -360,5 +372,72 @@ describe('catálogos e registro', () => {
     const eventos = mockEventos.mock.calls[0][0];
     expect(eventos.every((evento) => evento.nivel !== 'info')).toBe(true);
     expect(eventos.some((evento) => evento.acao === 'conflito')).toBe(true);
+  });
+});
+
+describe('a ponte com o cadastro', () => {
+  it('com as opções desligadas, nada operacional é criado nem desativado', async () => {
+    const resultado = await sincronizarPessoas({ ...BASE, provider: provider([[{ externalId: 'a' }]]) });
+
+    // Manter nome e cargo em dia de quem JÁ foi vinculado é o propósito de ter
+    // vinculado — isso roda sempre. O que as opções controlam é criar cadastro
+    // novo e mexer em `ativo`.
+    expect(mockReconciliar).toHaveBeenCalledWith({ tenantId: 7, connectionId: 3, autoDesativar: false });
+    expect(mockCriarAuto).not.toHaveBeenCalled();
+    // Sem nada para relatar, a sincronização se declara sem efeito no cadastro.
+    expect(resultado.reconciliacao).toBeNull();
+  });
+
+  it('a criação automática exige equipe de entrada e avisa quando falta', async () => {
+    const resultado = await sincronizarPessoas({
+      ...BASE,
+      autoCriarColaboradores: true,
+      equipePadraoId: null,
+      provider: provider([[{ externalId: 'a' }]]),
+    });
+
+    // `colaboradores.equipe_id` é NOT NULL e o diretório não conhece equipes:
+    // sem equipe de entrada não há o que criar, e ficar em silêncio faria
+    // parecer que a opção não funciona.
+    expect(mockCriarAuto).not.toHaveBeenCalled();
+    expect(resultado.reconciliacao).not.toBeNull();
+    const aviso = mockEventos.mock.calls[0][0].find((evento) => evento.acao === 'sem_equipe_padrao');
+    expect(aviso?.nivel).toBe('erro');
+  });
+
+  it('com equipe de entrada, cria e soma ao resultado', async () => {
+    mockCriarAuto.mockResolvedValue({ ...RECONCILIACAO_VAZIA, criados: 4 });
+
+    const resultado = await sincronizarPessoas({
+      ...BASE,
+      autoCriarColaboradores: true,
+      equipePadraoId: 5,
+      provider: provider([[{ externalId: 'a' }]]),
+    });
+
+    expect(mockCriarAuto).toHaveBeenCalledWith({ tenantId: 7, connectionId: 3, equipePadraoId: 5 });
+    expect(resultado.reconciliacao?.criados).toBe(4);
+  });
+
+  it('a auto-desativação chega até a ponte', async () => {
+    await sincronizarPessoas({
+      ...BASE,
+      autoDesativarColaboradores: true,
+      provider: provider([[{ externalId: 'a' }]]),
+    });
+
+    expect(mockReconciliar).toHaveBeenCalledWith({ tenantId: 7, connectionId: 3, autoDesativar: true });
+  });
+
+  it('leitura interrompida não reconcilia', async () => {
+    await sincronizarPessoas({
+      ...BASE,
+      autoDesativarColaboradores: true,
+      provider: provider([[{ externalId: 'a' }], [{ externalId: 'b' }]], { falharNaPagina: 1 }),
+    });
+
+    // Aplicar um espelho pela metade sobre gente de verdade desativaria quem
+    // apenas não chegou a ser lido.
+    expect(mockReconciliar).not.toHaveBeenCalled();
   });
 });

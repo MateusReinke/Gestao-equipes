@@ -99,6 +99,10 @@ export function exigirModuloHabilitado() {
 
 /// Completa as flags ausentes com o padrão do ambiente. Uma conexão salva
 /// antes de uma flag existir continua válida — a nova entra com o padrão.
+export function normalizarOpcoesPublicas(valor: unknown): OpcoesDiretorio {
+  return normalizarOpcoes(valor);
+}
+
 function normalizarOpcoes(valor: unknown): OpcoesDiretorio {
   const bruto = (valor ?? {}) as Record<string, unknown>;
   return opcoesSchema.parse({ ...directoryDefaults, ...bruto });
@@ -363,6 +367,9 @@ export async function sincronizarDiretorio(id: number, forcarCompleta = false, u
     incluirDesabilitados: opcoes.sincronizarUsuariosDesabilitados,
     logOperacoes: opcoes.logOperacoes,
     disparadoPorId: user?.userId ?? null,
+    autoCriarColaboradores: opcoes.autoCriarColaboradores,
+    autoDesativarColaboradores: opcoes.autoDesativarColaboradores,
+    equipePadraoId: conexao.equipePadraoId,
   });
 }
 
