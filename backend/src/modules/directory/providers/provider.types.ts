@@ -116,6 +116,26 @@ export type OpcoesDeLeitura = {
   cursor?: string | null;
 };
 
+/**
+ * Um grupo do diretório, com seus membros diretos.
+ *
+ * Só membros diretos: grupo aninhado é uma aresta entre grupos, e resolvê-la
+ * recursivamente exigiria decidir o que fazer com ciclos — problema que não
+ * vale pagar antes de alguém precisar.
+ */
+export type GrupoDiretorio = {
+  externalId: string;
+  nome: string;
+  descricao: string | null;
+  email: string | null;
+  /// Como o provedor classifica. Texto livre: cada provedor tem os seus.
+  tipo: string | null;
+  /// Object IDs dos membros. Quem não estiver no espelho é ignorado ao gravar.
+  membrosExternalIds: string[];
+  removido: boolean;
+  bruto: unknown;
+};
+
 export interface DirectoryProvider {
   readonly tipo: DirectoryProviderType;
 
@@ -135,4 +155,20 @@ export interface DirectoryProvider {
    * meio do caminho em "nada foi salvo". Página a página, o que já entrou fica.
    */
   listarPessoas(opcoes: OpcoesDeLeitura): AsyncIterable<PaginaDePessoas>;
+
+  /**
+   * Quem é o gestor de cada pessoa, por Object ID.
+   *
+   * Método separado, e não um campo de `PessoaDiretorio`, porque no Graph o
+   * gestor não vem junto: `/users/delta` não aceita `$expand=manager`, e
+   * `/users/{id}/manager` é uma requisição por pessoa. Deixar isso explícito no
+   * contrato é o que permite ao motor decidir quando vale pagar o custo.
+   *
+   * A chave ausente do mapa significa "não tem gestor" — que é o normal para
+   * quem está no topo e para conta de serviço.
+   */
+  listarGestores(externalIds: string[]): Promise<Map<string, string>>;
+
+  /// Grupos com seus membros diretos.
+  listarGrupos(): AsyncIterable<GrupoDiretorio[]>;
 }

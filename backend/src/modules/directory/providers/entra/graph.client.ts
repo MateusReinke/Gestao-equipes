@@ -164,13 +164,23 @@ export type PaginaGraph<T> = {
   deltaLink: string | null;
 };
 
+/// Resposta de um item dentro de um `$batch`. `status` é o HTTP daquele item —
+/// 404 num lote é resposta legítima, não falha do lote.
+export type RespostaEmLote<T> = { id: string; status: number; body: T | null };
+
 export type GraphClient = {
   obterToken(): Promise<string>;
   /// GET no Graph, já autenticado, com repetição e tradução de erro.
   get<T = unknown>(caminho: string, opcoes?: { consistenciaEventual?: boolean }): Promise<T>;
   /// Percorre uma coleção seguindo `@odata.nextLink` até o fim.
   paginar<T>(caminho: string, opcoes?: { consistenciaEventual?: boolean }): AsyncGenerator<PaginaGraph<T>>;
+  /// Agrupa GETs em requisições `$batch`. Devolve na ordem em que entraram.
+  lote<T>(caminhos: string[]): Promise<Array<RespostaEmLote<T>>>;
 };
+
+/// Teto do `$batch` no Microsoft Graph. Não é configurável: mandar 21 faz o
+/// Graph recusar o lote inteiro.
+const TAMANHO_DO_LOTE = 20;
 
 export function criarGraphClient(credenciais: GraphCredenciais): GraphClient {
   const authority = (credenciais.authorityUrl || env.entraAuthorityUrl).replace(/\/+$/, '');
@@ -341,5 +351,65 @@ export function criarGraphClient(credenciais: GraphCredenciais): GraphClient {
     }
   }
 
-  return { obterToken, get, paginar };
+  /**
+   * Executa GETs em lote.
+   *
+   * Existe porque algumas leituras do Graph não têm versão em coleção: o gestor
+   * de uma pessoa só se obtém em `/users/{id}/manager`, um por vez. Numa
+   * empresa de mil pessoas, isso seriam mil requisições; em lotes de 20, são
+   * cinquenta.
+   *
+   * O status de cada item vem separado do status do lote de propósito: 404 em
+   * "quem é o gestor de fulano" significa "não tem gestor", que é informação, e
+   * não erro.
+   */
+  async function lote<T>(caminhos: string[]): Promise<Array<RespostaEmLote<T>>> {
+    const resultados: Array<RespostaEmLote<T>> = [];
+
+    for (let inicio = 0; inicio < caminhos.length; inicio += TAMANHO_DO_LOTE) {
+      const fatia = caminhos.slice(inicio, inicio + TAMANHO_DO_LOTE);
+      const token = await obterToken();
+
+      const resposta = await fetchComTimeout(`${base}/$batch`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          requests: fatia.map((caminho, indice) => ({ id: String(indice), method: 'GET', url: caminho })),
+        }),
+      });
+
+      const texto = await resposta.text();
+
+      if (!resposta.ok) {
+        const { codigo, mensagem } = extrairErroDoGraph(texto);
+        if (resposta.status === 403 || codigo === 'Authorization_RequestDenied') {
+          throw new GraphPermissionError(mensagem || 'Sem permissão para esta leitura em lote.', codigo || 'Authorization_RequestDenied');
+        }
+        throw new GraphRequestError(mensagem || `O $batch respondeu ${resposta.status}.`, resposta.status, codigo);
+      }
+
+      const json = JSON.parse(texto) as { responses?: Array<{ id: string; status: number; body?: T }> };
+
+      // O Graph NÃO garante a ordem das respostas dentro do lote. Reordenar
+      // pelo id é o que mantém a correspondência com o pedido — sem isso, o
+      // gestor de uma pessoa acabaria atribuído a outra.
+      const porId = new Map((json.responses ?? []).map((item) => [item.id, item]));
+      for (let indice = 0; indice < fatia.length; indice += 1) {
+        const item = porId.get(String(indice));
+        resultados.push({
+          id: String(inicio + indice),
+          status: item?.status ?? 0,
+          body: (item?.body ?? null) as T | null,
+        });
+      }
+    }
+
+    return resultados;
+  }
+
+  return { obterToken, get, paginar, lote };
 }

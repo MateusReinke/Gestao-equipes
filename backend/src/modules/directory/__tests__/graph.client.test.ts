@@ -233,3 +233,71 @@ describe('requisições ao Graph', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('leitura em lote', () => {
+  it('agrupa de 20 em 20, que é o teto do Graph', async () => {
+    fetchMock.mockResolvedValueOnce(tokenOk());
+    for (let i = 0; i < 3; i += 1) {
+      fetchMock.mockResolvedValueOnce(resposta(200, { responses: [] }));
+    }
+
+    await criarGraphClient(CREDENCIAIS).lote(Array.from({ length: 45 }, (_, i) => `/users/${i}/manager`));
+
+    // Mandar 21 num lote faz o Graph recusar o lote inteiro.
+    const lotes = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/$batch'));
+    expect(lotes).toHaveLength(3);
+    expect(JSON.parse(lotes[0][1].body).requests).toHaveLength(20);
+    expect(JSON.parse(lotes[2][1].body).requests).toHaveLength(5);
+  });
+
+  it('reordena as respostas pelo id do pedido', async () => {
+    fetchMock.mockResolvedValueOnce(tokenOk()).mockResolvedValueOnce(
+      // O Graph NÃO garante a ordem dentro do lote. Sem reordenar, o gestor de
+      // uma pessoa acabaria atribuído a outra.
+      resposta(200, {
+        responses: [
+          { id: '2', status: 200, body: { id: 'terceiro' } },
+          { id: '0', status: 200, body: { id: 'primeiro' } },
+          { id: '1', status: 404, body: null },
+        ],
+      })
+    );
+
+    const resultado = await criarGraphClient(CREDENCIAIS).lote<{ id: string }>(['/a', '/b', '/c']);
+
+    expect(resultado.map((item) => item.body?.id ?? null)).toEqual(['primeiro', null, 'terceiro']);
+  });
+
+  it('404 num item é resposta, não falha do lote', async () => {
+    fetchMock
+      .mockResolvedValueOnce(tokenOk())
+      .mockResolvedValueOnce(resposta(200, { responses: [{ id: '0', status: 404 }] }));
+
+    const resultado = await criarGraphClient(CREDENCIAIS).lote(['/users/x/manager']);
+
+    // "Não tem gestor" é informação; tratá-la como erro encheria o log de
+    // falhas inventadas.
+    expect(resultado[0].status).toBe(404);
+    expect(resultado[0].body).toBeNull();
+  });
+
+  it('403 no lote inteiro vira erro de permissão', async () => {
+    fetchMock
+      .mockResolvedValueOnce(tokenOk())
+      .mockResolvedValueOnce(resposta(403, { error: { code: 'Authorization_RequestDenied' } }));
+
+    await expect(criarGraphClient(CREDENCIAIS).lote(['/a'])).rejects.toBeInstanceOf(GraphPermissionError);
+  });
+
+  it('resposta faltando no lote não desalinha o resultado', async () => {
+    fetchMock
+      .mockResolvedValueOnce(tokenOk())
+      .mockResolvedValueOnce(resposta(200, { responses: [{ id: '1', status: 200, body: { id: 'b' } }] }));
+
+    const resultado = await criarGraphClient(CREDENCIAIS).lote<{ id: string }>(['/a', '/b']);
+
+    expect(resultado).toHaveLength(2);
+    expect(resultado[0]).toMatchObject({ status: 0, body: null });
+    expect(resultado[1].body).toEqual({ id: 'b' });
+  });
+});

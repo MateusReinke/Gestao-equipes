@@ -1,5 +1,6 @@
 import type {
   DirectoryProvider,
+  GrupoDiretorio,
   OpcoesDeLeitura,
   PaginaDePessoas,
   PessoaDiretorio,
@@ -36,6 +37,9 @@ export class FakeProvider implements DirectoryProvider {
       /// de execução parcial.
       falharNaPagina?: number;
       resultadoDoTeste?: ResultadoDoTeste;
+      /// Quem reporta a quem, por Object ID.
+      gestores?: Record<string, string>;
+      grupos?: GrupoDiretorio[];
     }
   ) {}
 
@@ -63,6 +67,19 @@ export class FakeProvider implements DirectoryProvider {
       const ultima = indice === roteiro.length - 1;
       yield { pessoas: pagina, cursor: ultima ? (this.config.cursorFinal ?? null) : null };
     }
+  }
+
+  async listarGestores(externalIds: string[]): Promise<Map<string, string>> {
+    const configurados = this.config.gestores ?? {};
+    // Só devolve o que foi perguntado — como o provedor real, que responde 404
+    // (ausência no mapa) para quem não tem gestor.
+    return new Map(
+      externalIds.filter((id) => configurados[id]).map((id) => [id, configurados[id]])
+    );
+  }
+
+  async *listarGrupos(): AsyncGenerator<GrupoDiretorio[]> {
+    if (this.config.grupos?.length) yield this.config.grupos;
   }
 }
 

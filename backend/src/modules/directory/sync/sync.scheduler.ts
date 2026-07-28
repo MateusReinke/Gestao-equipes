@@ -70,6 +70,11 @@ async function sincronizarUma(conexao: Conexao): Promise<void> {
     cursor: conexao.cursorPessoas,
     modo: 'auto',
     incluirDesabilitados: opcoes.sincronizarUsuariosDesabilitados !== false,
+    sincronizarGestores: opcoes.sincronizarGestores !== false,
+    sincronizarGrupos: opcoes.sincronizarGrupos === true,
+    autoCriarColaboradores: opcoes.autoCriarColaboradores === true,
+    autoDesativarColaboradores: opcoes.autoDesativarColaboradores === true,
+    equipePadraoId: conexao.equipePadraoId,
     logOperacoes: opcoes.logOperacoes !== false,
     // Nulo marca "foi o agendador", e é o que a tela mostra na coluna de quem
     // disparou.

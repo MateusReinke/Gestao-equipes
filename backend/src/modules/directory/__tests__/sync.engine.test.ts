@@ -14,6 +14,11 @@ vi.mock('../directory.repository', () => ({
     sincronizarCatalogo: vi.fn(),
     registrarEventos: vi.fn(),
     atualizarCursor: vi.fn(),
+    externalIdsPresentes: vi.fn(),
+    atualizarGestores: vi.fn(),
+    upsertGrupo: vi.fn(),
+    substituirMembros: vi.fn(),
+    marcarGruposAusentes: vi.fn(),
   },
 }));
 
@@ -39,6 +44,11 @@ const mockContar = vi.mocked(directoryRepository.contarPorCampo);
 const mockCatalogo = vi.mocked(directoryRepository.sincronizarCatalogo);
 const mockEventos = vi.mocked(directoryRepository.registrarEventos);
 const mockCursor = vi.mocked(directoryRepository.atualizarCursor);
+const mockPresentes = vi.mocked(directoryRepository.externalIdsPresentes);
+const mockGestores = vi.mocked(directoryRepository.atualizarGestores);
+const mockUpsertGrupo = vi.mocked(directoryRepository.upsertGrupo);
+const mockMembros = vi.mocked(directoryRepository.substituirMembros);
+const mockGruposAusentes = vi.mocked(directoryRepository.marcarGruposAusentes);
 const mockReconciliar = vi.mocked(reconciliarVinculados);
 const mockCriarAuto = vi.mocked(criarColaboradoresAutomaticamente);
 
@@ -62,6 +72,11 @@ beforeEach(() => {
   mockFechar.mockResolvedValue({} as never);
   mockReconciliar.mockResolvedValue({ ...RECONCILIACAO_VAZIA });
   mockCriarAuto.mockResolvedValue({ ...RECONCILIACAO_VAZIA });
+  mockPresentes.mockResolvedValue([]);
+  mockGestores.mockResolvedValue({ comGestor: 0, limpos: 0 });
+  mockUpsertGrupo.mockResolvedValue({ id: 1 } as never);
+  mockMembros.mockResolvedValue(0);
+  mockGruposAusentes.mockResolvedValue({ count: 0 } as never);
 });
 
 type Parcial = Parameters<typeof pessoaFalsa>[0];
@@ -372,6 +387,132 @@ describe('catálogos e registro', () => {
     const eventos = mockEventos.mock.calls[0][0];
     expect(eventos.every((evento) => evento.nivel !== 'info')).toBe(true);
     expect(eventos.some((evento) => evento.acao === 'conflito')).toBe(true);
+  });
+});
+
+describe('hierarquia e grupos', () => {
+  const GRUPO = {
+    externalId: 'g1',
+    nome: 'NOC',
+    descricao: null,
+    email: null,
+    tipo: 'seguranca',
+    membrosExternalIds: ['a', 'b'],
+    removido: false,
+    bruto: null,
+  };
+
+  it('sem as opções ligadas, nem gestor nem grupo são perguntados ao provedor', async () => {
+    // Cada leitura custa requisições próprias contra a cota que a Microsoft
+    // mede por aplicação — quem não quer organograma não deve pagar por ele.
+    const resultado = await sincronizarPessoas({ ...BASE, provider: provider([[{ externalId: 'a' }]]) });
+
+    expect(mockGestores).not.toHaveBeenCalled();
+    expect(mockUpsertGrupo).not.toHaveBeenCalled();
+    expect(resultado.gestores).toBe(0);
+    expect(resultado.grupos).toBe(0);
+  });
+
+  it('a hierarquia é perguntada para quem está no espelho, não só para quem veio na leitura', async () => {
+    // O delta de usuários não reporta troca de gestor: perguntar só dos que
+    // vieram deixaria passar a mudança de chefia de quem não teve outro campo
+    // alterado.
+    mockPresentes.mockResolvedValue(['a', 'b', 'c']);
+    mockGestores.mockResolvedValue({ comGestor: 2, limpos: 1 });
+
+    const resultado = await sincronizarPessoas({
+      ...BASE,
+      sincronizarGestores: true,
+      provider: provider([[{ externalId: 'a' }]], { gestores: { a: 'chefe', b: 'chefe' } }),
+    });
+
+    expect(mockGestores).toHaveBeenCalledWith(3, new Map([['a', 'chefe'], ['b', 'chefe']]));
+    expect(resultado.gestores).toBe(2);
+  });
+
+  it('espelho vazio não gera chamada de hierarquia', async () => {
+    await sincronizarPessoas({ ...BASE, sincronizarGestores: true, provider: provider([[]]) });
+
+    expect(mockGestores).not.toHaveBeenCalled();
+  });
+
+  it('falha na hierarquia vira aviso e não derruba a execução', async () => {
+    // Sem organograma o espelho continua correto. Derrubar a carga inteira por
+    // causa de um acessório seria trocar tudo por pouco.
+    mockPresentes.mockResolvedValue(['a']);
+    mockGestores.mockRejectedValue(new Error('Graph fora do ar'));
+
+    const resultado = await sincronizarPessoas({
+      ...BASE,
+      sincronizarGestores: true,
+      provider: provider([[{ externalId: 'a' }]], { gestores: { a: 'chefe' } }),
+    });
+
+    expect(resultado.status).toBe('sucesso');
+    expect(resultado.gestores).toBe(0);
+    const aviso = mockEventos.mock.calls[0][0].find((evento) => evento.acao === 'gestores_falharam');
+    expect(aviso?.nivel).toBe('aviso');
+    expect(aviso?.mensagem).toContain('Graph fora do ar');
+  });
+
+  it('grava o grupo e substitui os membros dele', async () => {
+    mockUpsertGrupo.mockResolvedValue({ id: 42 } as never);
+
+    const resultado = await sincronizarPessoas({
+      ...BASE,
+      sincronizarGrupos: true,
+      provider: provider([[{ externalId: 'a' }]], { grupos: [GRUPO] }),
+    });
+
+    expect(mockUpsertGrupo).toHaveBeenCalledWith(7, 3, expect.objectContaining({ externalId: 'g1', nome: 'NOC' }));
+    // Substituir e não somar: sair de um grupo é tão informativo quanto entrar.
+    expect(mockMembros).toHaveBeenCalledWith(7, 42, 3, ['a', 'b']);
+    expect(resultado.grupos).toBe(1);
+  });
+
+  it('grupo que não veio é marcado como ausente, nunca apagado', async () => {
+    await sincronizarPessoas({
+      ...BASE,
+      sincronizarGrupos: true,
+      provider: provider([[{ externalId: 'a' }]], { grupos: [GRUPO] }),
+    });
+
+    expect(mockGruposAusentes).toHaveBeenCalledWith(3, ['g1'], expect.any(Date));
+  });
+
+  it('falha nos grupos preserva o que já entrou', async () => {
+    mockUpsertGrupo.mockResolvedValueOnce({ id: 1 } as never).mockRejectedValueOnce(new Error('sem permissão'));
+
+    const resultado = await sincronizarPessoas({
+      ...BASE,
+      sincronizarGrupos: true,
+      provider: provider([[{ externalId: 'a' }]], {
+        grupos: [GRUPO, { ...GRUPO, externalId: 'g2' }],
+      }),
+    });
+
+    expect(resultado.status).toBe('sucesso');
+    expect(resultado.grupos).toBe(1);
+    // Sem lista completa de vistos, marcar ausentes derrubaria os grupos bons.
+    expect(mockGruposAusentes).not.toHaveBeenCalled();
+  });
+
+  it('leitura interrompida não pergunta gestor nem grupo', async () => {
+    await sincronizarPessoas({
+      ...BASE,
+      sincronizarGestores: true,
+      sincronizarGrupos: true,
+      provider: provider([[{ externalId: 'a' }], [{ externalId: 'b' }]], {
+        falharNaPagina: 1,
+        gestores: { a: 'chefe' },
+        grupos: [GRUPO],
+      }),
+    });
+
+    // Gestor é referência a um Object ID que precisa existir no espelho, e o
+    // espelho está pela metade.
+    expect(mockGestores).not.toHaveBeenCalled();
+    expect(mockUpsertGrupo).not.toHaveBeenCalled();
   });
 });
 

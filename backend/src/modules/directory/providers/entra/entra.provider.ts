@@ -1,5 +1,6 @@
 import type {
   DirectoryProvider,
+  GrupoDiretorio,
   OpcoesDeLeitura,
   PaginaDePessoas,
   ResultadoDoTeste,
@@ -34,6 +35,35 @@ type RespostaContagem = {
   '@odata.count'?: number;
   value?: unknown[];
 };
+
+type GrupoGraph = {
+  id?: string;
+  displayName?: string | null;
+  description?: string | null;
+  mail?: string | null;
+  groupTypes?: string[] | null;
+  securityEnabled?: boolean | null;
+};
+
+function texto(valor: unknown): string | null {
+  if (typeof valor !== 'string') return null;
+  const limpo = valor.trim();
+  return limpo === '' ? null : limpo;
+}
+
+/**
+ * Traduz a classificação do Graph para algo legível.
+ *
+ * O Entra não tem um campo "tipo": a classificação é deduzida da combinação de
+ * `groupTypes` com `securityEnabled`. Um grupo do Microsoft 365 tem
+ * `Unified` em `groupTypes`; um de segurança tem `securityEnabled`; o resto é
+ * lista de distribuição.
+ */
+function classificarGrupo(grupo: GrupoGraph): string {
+  if (grupo.groupTypes?.includes('Unified')) return 'Microsoft 365';
+  if (grupo.securityEnabled) return 'Segurança';
+  return 'Distribuição';
+}
 
 /// Formata contagem no padrão brasileiro (1.284, não 1,284).
 function contar(valor: number | undefined, singular: string, plural: string): string {
@@ -113,6 +143,68 @@ export class EntraIdProvider implements DirectoryProvider {
         .filter((pessoa): pessoa is NonNullable<typeof pessoa> => pessoa !== null);
 
       yield { pessoas, cursor: pagina.deltaLink };
+    }
+  }
+
+  /**
+   * Busca o gestor de cada pessoa, em lotes.
+   *
+   * `/users/{id}/manager` responde **404 quando a pessoa não tem gestor** —
+   * situação normal para quem está no topo do organograma e para conta de
+   * serviço. Tratar isso como erro encheria o log de falhas inventadas.
+   */
+  async listarGestores(externalIds: string[]): Promise<Map<string, string>> {
+    const gestores = new Map<string, string>();
+    if (externalIds.length === 0) return gestores;
+
+    const respostas = await this.graph.lote<{ id?: string }>(
+      externalIds.map((id) => `/users/${id}/manager?$select=id`)
+    );
+
+    for (const [indice, resposta] of respostas.entries()) {
+      if (resposta.status !== 200) continue;
+
+      const gestorId = resposta.body?.id;
+      // Alguém que é o próprio gestor é dado sujo do diretório, e gravá-lo
+      // criaria um ciclo de um nó no organograma.
+      if (gestorId && gestorId !== externalIds[indice]) {
+        gestores.set(externalIds[indice], gestorId);
+      }
+    }
+
+    return gestores;
+  }
+
+  /**
+   * Grupos e seus membros diretos.
+   *
+   * Os membros vêm numa segunda passada em lote, e não por `$expand=members`:
+   * o expand devolve um número limitado de membros por grupo, silenciosamente
+   * — um grupo grande apareceria truncado sem nenhum sinal de que faltou gente.
+   */
+  async *listarGrupos(): AsyncGenerator<GrupoDiretorio[]> {
+    const caminho = '/groups?$select=id,displayName,description,mail,groupTypes,securityEnabled&$top=999';
+
+    for await (const pagina of this.graph.paginar<GrupoGraph>(caminho)) {
+      const grupos = pagina.itens.filter((grupo) => grupo.id);
+      if (grupos.length === 0) continue;
+
+      const membros = await this.graph.lote<{ value?: Array<{ id?: string }> }>(
+        grupos.map((grupo) => `/groups/${grupo.id}/members?$select=id&$top=999`)
+      );
+
+      yield grupos.map((grupo, indice) => ({
+        externalId: grupo.id!,
+        nome: texto(grupo.displayName) ?? grupo.id!,
+        descricao: texto(grupo.description),
+        email: texto(grupo.mail),
+        tipo: classificarGrupo(grupo),
+        membrosExternalIds: (membros[indice]?.body?.value ?? [])
+          .map((membro) => membro.id)
+          .filter((id): id is string => Boolean(id)),
+        removido: false,
+        bruto: grupo,
+      }));
     }
   }
 

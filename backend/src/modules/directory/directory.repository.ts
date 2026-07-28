@@ -267,6 +267,141 @@ export const directoryRepository = {
     });
   },
 
+  // -------------------------------------------------- gestores e grupos
+
+  /// Object IDs presentes no espelho, para a passada de gestores saber a quem
+  /// perguntar sem carregar as linhas inteiras.
+  async externalIdsPresentes(connectionId: number): Promise<string[]> {
+    const pessoas = await prisma.directoryPerson.findMany({
+      where: { connectionId, removidoEm: null },
+      select: { externalId: true },
+    });
+    return pessoas.map((pessoa) => pessoa.externalId);
+  },
+
+  /**
+   * Grava a hierarquia lida do provedor.
+   *
+   * Quem não veio no mapa tem o gestor limpo: no diretório, deixar de ter
+   * gestor é uma mudança tão válida quanto passar a ter, e manter o antigo
+   * desenharia um organograma que já não existe.
+   */
+  async atualizarGestores(connectionId: number, gestores: Map<string, string>) {
+    let comGestor = 0;
+
+    for (const [externalId, gestorExternalId] of gestores) {
+      const { count } = await prisma.directoryPerson.updateMany({
+        where: { connectionId, externalId },
+        data: { gestorExternalId },
+      });
+      comGestor += count;
+    }
+
+    const semGestor = await prisma.directoryPerson.updateMany({
+      where: { connectionId, removidoEm: null, externalId: { notIn: [...gestores.keys()] }, gestorExternalId: { not: null } },
+      data: { gestorExternalId: null },
+    });
+
+    return { comGestor, limpos: semGestor.count };
+  },
+
+  upsertGrupo(
+    tenantId: number,
+    connectionId: number,
+    grupo: Omit<Prisma.DirectoryGroupUncheckedCreateInput, 'tenantId' | 'connectionId'>
+  ) {
+    const agora = new Date();
+    return prisma.directoryGroup.upsert({
+      where: { connectionId_externalId: { connectionId, externalId: grupo.externalId } },
+      create: { ...grupo, tenantId, connectionId, primeiraVezEm: agora, ultimaVezEm: agora },
+      update: { ...grupo, ultimaVezEm: agora, removidoEm: null },
+    });
+  },
+
+  /**
+   * Substitui os membros do grupo.
+   *
+   * Substituição, e não diferença: a lista que veio do provedor É a verdade
+   * sobre o grupo naquele instante, e calcular quem entrou e quem saiu daria o
+   * mesmo resultado por mais trabalho.
+   *
+   * Membro que não está no espelho é ignorado em silêncio — grupo do Entra
+   * contém contas de serviço, convidados e outros grupos, e nem todos passam
+   * pelo filtro que traz as pessoas.
+   */
+  async substituirMembros(tenantId: number, grupoId: number, connectionId: number, membrosExternalIds: string[]) {
+    const pessoas = await prisma.directoryPerson.findMany({
+      where: { connectionId, externalId: { in: membrosExternalIds } },
+      select: { id: true },
+    });
+
+    await prisma.directoryGroupMember.deleteMany({ where: { grupoId } });
+    if (pessoas.length === 0) return 0;
+
+    await prisma.directoryGroupMember.createMany({
+      data: pessoas.map((pessoa) => ({ grupoId, pessoaId: pessoa.id, tenantId })),
+      skipDuplicates: true,
+    });
+    return pessoas.length;
+  },
+
+  marcarGruposAusentes(connectionId: number, externalIdsVistos: string[], quando: Date) {
+    return prisma.directoryGroup.updateMany({
+      where: { connectionId, removidoEm: null, externalId: { notIn: externalIdsVistos } },
+      data: { removidoEm: quando },
+    });
+  },
+
+  listarGrupos(tenantId: number, connectionId: number) {
+    return prisma.directoryGroup.findMany({
+      where: { tenantId, connectionId },
+      orderBy: [{ removidoEm: 'asc' }, { nome: 'asc' }],
+      include: { _count: { select: { membros: true } } },
+    });
+  },
+
+  /**
+   * Todo mundo com gestor, enxuto, para montar a árvore em memória.
+   *
+   * Em memória de propósito: um organograma tem a ordem de grandeza do quadro
+   * de funcionários, e uma consulta recursiva no banco para depois montar a
+   * mesma árvore em JavaScript seria trabalho a mais pelo mesmo resultado.
+   */
+  arvoreDeGestores(tenantId: number, connectionId: number) {
+    return prisma.directoryPerson.findMany({
+      where: { tenantId, connectionId, removidoEm: null },
+      select: {
+        id: true,
+        externalId: true,
+        nomeExibicao: true,
+        cargo: true,
+        departamento: true,
+        gestorExternalId: true,
+        contaHabilitada: true,
+        colaboradorId: true,
+      },
+      orderBy: { nomeExibicao: 'asc' },
+    });
+  },
+
+  /// Equipe de cada colaborador já vinculado ao diretório. Leitura de tabela
+  /// operacional — permitida, porque é leitura, e o módulo precisa dela para
+  /// sugerir responsáveis.
+  async equipesDosVinculados(tenantId: number, connectionId: number) {
+    const pessoas = await prisma.directoryPerson.findMany({
+      where: { tenantId, connectionId, colaboradorId: { not: null }, removidoEm: null },
+      select: { colaboradorId: true, colaborador: { select: { equipeId: true, equipe: { select: { nome: true } } } } },
+    });
+
+    return pessoas
+      .filter((pessoa) => pessoa.colaborador)
+      .map((pessoa) => ({
+        colaboradorId: pessoa.colaboradorId!,
+        equipeId: pessoa.colaborador!.equipeId,
+        equipeNome: pessoa.colaborador!.equipe.nome,
+      }));
+  },
+
   // ------------------------------------------------------------ vínculo
 
   /// Campos que a reconciliação precisa de cada pessoa. Explícito para não

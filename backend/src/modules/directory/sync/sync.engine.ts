@@ -31,6 +31,8 @@ export type ResultadoDaSincronizacao = {
   removidos: number;
   departamentos: number;
   cargos: number;
+  gestores: number;
+  grupos: number;
   /// Verdadeiro quando começou incremental e teve de recomeçar do zero porque
   /// o provedor invalidou o cursor.
   recomecouDoZero: boolean;
@@ -60,6 +62,11 @@ export type ParametrosDeSincronizacao = {
   /// Equipe de entrada da criação automática. Sem ela, não há criação:
   /// `colaboradores.equipe_id` é NOT NULL e o diretório não conhece equipes.
   equipePadraoId?: number | null;
+
+  /// Leituras complementares. Cada uma custa requisições próprias ao provedor,
+  /// então são opções e não comportamento padrão.
+  sincronizarGestores?: boolean;
+  sincronizarGrupos?: boolean;
 };
 
 export class SincronizacaoEmAndamentoError extends Error {}
@@ -191,6 +198,8 @@ async function executar(params: ParametrosDeSincronizacao): Promise<ResultadoDaS
   let departamentos = 0;
   let cargos = 0;
   let reconciliacao: ResultadoDaReconciliacao | null = null;
+  let gestores = 0;
+  let grupos = 0;
 
   if (acumulado.concluiu) {
     // Só a leitura completa sabe quem sumiu por ausência. Na incremental, o
@@ -222,6 +231,16 @@ async function executar(params: ParametrosDeSincronizacao): Promise<ResultadoDaS
     // uma leitura interrompida faria a próxima execução pular o que faltou.
     await directoryRepository.atualizarCursor(params.connectionId, acumulado.cursor);
 
+    // Gestores e grupos vêm depois das pessoas porque dependem delas: o gestor
+    // é referência a um Object ID que precisa existir no espelho, e o membro de
+    // um grupo é uma pessoa que precisa já ter sido gravada.
+    if (params.sincronizarGestores) {
+      gestores = await lerGestores(params, registrar);
+    }
+    if (params.sincronizarGrupos) {
+      grupos = await lerGrupos(params, registrar);
+    }
+
     // A ÚNICA parte da sincronização que alcança o cadastro, e só quando a
     // empresa pediu. Depois da leitura ter fechado: reconciliar a partir de um
     // espelho pela metade aplicaria dados incompletos sobre gente de verdade.
@@ -248,6 +267,8 @@ async function executar(params: ParametrosDeSincronizacao): Promise<ResultadoDaS
     detalhes: {
       departamentos,
       cargos,
+      gestores,
+      grupos,
       recomecouDoZero,
       reconciliacao: reconciliacao
         ? {
@@ -271,10 +292,97 @@ async function executar(params: ParametrosDeSincronizacao): Promise<ResultadoDaS
     removidos: acumulado.removidos,
     departamentos,
     cargos,
+    gestores,
+    grupos,
     recomecouDoZero,
     reconciliacao,
     erro: acumulado.erro,
   };
+}
+
+/**
+ * Passada de gestores.
+ *
+ * Separada da leitura de pessoas porque no Graph o gestor não vem junto: são
+ * requisições próprias, uma por pessoa, agrupadas em lotes pelo provedor.
+ *
+ * Uma consequência a conhecer: a hierarquia é relida a partir de quem está no
+ * espelho, então uma execução incremental que trouxe cinco pessoas ainda
+ * pergunta o gestor de todo mundo. Perguntar só dos cinco deixaria passar a
+ * mudança de chefia de quem não teve outro campo alterado — o Graph não reporta
+ * troca de gestor no delta de usuários.
+ */
+async function lerGestores(
+  params: ParametrosDeSincronizacao,
+  registrar: (nivel: 'info' | 'aviso' | 'erro', externalId: string | null, acao: string, mensagem: string) => void
+): Promise<number> {
+  try {
+    const ids = await directoryRepository.externalIdsPresentes(params.connectionId);
+    if (ids.length === 0) return 0;
+
+    const hierarquia = await params.provider.listarGestores(ids);
+    const { comGestor, limpos } = await directoryRepository.atualizarGestores(params.connectionId, hierarquia);
+
+    registrar('info', null, 'gestores', `${comGestor} pessoa(s) com gestor identificado${limpos > 0 ? `, ${limpos} sem gestor agora` : ''}`);
+    return comGestor;
+  } catch (falha) {
+    // Hierarquia é acessória: sem ela o espelho continua correto, só não há
+    // organograma. Não vale derrubar a execução inteira.
+    registrar(
+      'aviso',
+      null,
+      'gestores_falharam',
+      `Não foi possível ler a hierarquia: ${falha instanceof Error ? falha.message : 'erro desconhecido'}`
+    );
+    return 0;
+  }
+}
+
+/// Passada de grupos. Mesma lógica de tolerância: grupo é informação
+/// complementar, e sua falha não invalida as pessoas já gravadas.
+async function lerGrupos(
+  params: ParametrosDeSincronizacao,
+  registrar: (nivel: 'info' | 'aviso' | 'erro', externalId: string | null, acao: string, mensagem: string) => void
+): Promise<number> {
+  const vistos: string[] = [];
+  let total = 0;
+
+  try {
+    for await (const pagina of params.provider.listarGrupos()) {
+      for (const grupo of pagina) {
+        const gravado = await directoryRepository.upsertGrupo(params.tenantId, params.connectionId, {
+          externalId: grupo.externalId,
+          nome: grupo.nome,
+          descricao: grupo.descricao,
+          email: grupo.email,
+          tipo: grupo.tipo,
+          bruto: (grupo.bruto ?? undefined) as Prisma.InputJsonValue,
+        });
+
+        await directoryRepository.substituirMembros(
+          params.tenantId,
+          gravado.id,
+          params.connectionId,
+          grupo.membrosExternalIds
+        );
+
+        vistos.push(grupo.externalId);
+        total += 1;
+      }
+    }
+
+    const ausentes = await directoryRepository.marcarGruposAusentes(params.connectionId, vistos, new Date());
+    registrar('info', null, 'grupos', `${total} grupo(s) lido(s)${ausentes.count > 0 ? `, ${ausentes.count} não vieram` : ''}`);
+    return total;
+  } catch (falha) {
+    registrar(
+      'aviso',
+      null,
+      'grupos_falharam',
+      `Não foi possível ler os grupos: ${falha instanceof Error ? falha.message : 'erro desconhecido'}`
+    );
+    return total;
+  }
 }
 
 /**

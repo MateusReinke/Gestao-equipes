@@ -174,6 +174,8 @@ model Tenant {
   diretorioDepartamentos DirectoryDepartment[]
   diretorioCargos        DirectoryJobTitle[]
   diretorioExecucoes     DirectorySyncRun[]
+  diretorioGrupos        DirectoryGroup[]
+  diretorioGrupoMembros  DirectoryGroupMember[]
 
   @@map("tenants")
 }
@@ -866,9 +868,9 @@ model DirectoryConnection {
   /// senão um processo morto no meio deixaria a conexão travada para sempre.
   sincronizandoDesde DateTime? @map("sincronizando_desde")
 
-  ultimoTesteEm         DateTime? @map("ultimo_teste_em")
-  ultimoTesteOk         Boolean?  @map("ultimo_teste_ok")
-  ultimoErro            String?   @map("ultimo_erro")
+  ultimoTesteEm DateTime? @map("ultimo_teste_em")
+  ultimoTesteOk Boolean?  @map("ultimo_teste_ok")
+  ultimoErro    String?   @map("ultimo_erro")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -876,6 +878,7 @@ model DirectoryConnection {
   tenant        Tenant                @relation(fields: [tenantId], references: [id])
   equipePadrao  Team?                 @relation("DirectoryDefaultTeam", fields: [equipePadraoId], references: [id])
   pessoas       DirectoryPerson[]
+  grupos        DirectoryGroup[]
   departamentos DirectoryDepartment[]
   cargos        DirectoryJobTitle[]
   execucoes     DirectorySyncRun[]
@@ -943,9 +946,10 @@ model DirectoryPerson {
   primeiraVezEm DateTime  @default(now()) @map("primeira_vez_em")
   ultimaVezEm   DateTime  @default(now()) @map("ultima_vez_em")
 
-  tenant      Tenant              @relation(fields: [tenantId], references: [id])
-  conexao     DirectoryConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  colaborador Collaborator?       @relation(fields: [colaboradorId], references: [id], onDelete: SetNull)
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id])
+  conexao     DirectoryConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  colaborador Collaborator?          @relation(fields: [colaboradorId], references: [id], onDelete: SetNull)
+  grupos      DirectoryGroupMember[]
 
   @@unique([connectionId, externalId])
   @@index([tenantId])
@@ -1065,4 +1069,57 @@ model DirectorySyncEvent {
 
   @@index([runId, nivel])
   @@map("diretorio_execucao_eventos")
+}
+
+/// Grupo do diretório. Espelho, como todo o resto do módulo — um grupo do
+/// Entra NÃO é uma equipe operacional, e nada aqui vira `equipes`.
+///
+/// A distinção importa: grupo do diretório descreve como a TI organiza acesso;
+/// equipe operacional descreve quem cobre qual plantão. Uma empresa costuma
+/// ter os dois desalinhados, e forçar o alinhamento quebraria a escala.
+model DirectoryGroup {
+  id           Int    @id @default(autoincrement())
+  tenantId     Int    @map("tenant_id")
+  connectionId Int    @map("connection_id")
+  externalId   String @map("external_id")
+
+  nome      String
+  descricao String?
+  email     String?
+  /// Como o provedor classifica: segurança, Microsoft 365, distribuição.
+  tipo      String?
+
+  bruto Json?
+
+  removidoEm    DateTime? @map("removido_em")
+  primeiraVezEm DateTime  @default(now()) @map("primeira_vez_em")
+  ultimaVezEm   DateTime  @default(now()) @map("ultima_vez_em")
+
+  tenant  Tenant                 @relation(fields: [tenantId], references: [id])
+  conexao DirectoryConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  membros DirectoryGroupMember[]
+
+  @@unique([connectionId, externalId])
+  @@index([tenantId])
+  @@map("diretorio_grupos")
+}
+
+/// Quem está em qual grupo. Só membros diretos: grupo aninhado é uma aresta
+/// entre grupos, e resolvê-la recursivamente exigiria decidir o que fazer com
+/// ciclos — problema que não vale pagar antes de alguém precisar.
+model DirectoryGroupMember {
+  id       Int @id @default(autoincrement())
+  grupoId  Int @map("grupo_id")
+  pessoaId Int @map("pessoa_id")
+
+  tenantId Int @map("tenant_id")
+
+  grupo  DirectoryGroup  @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+  pessoa DirectoryPerson @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+  Tenant Tenant          @relation(fields: [tenantId], references: [id])
+
+  @@unique([grupoId, pessoaId])
+  @@index([pessoaId])
+  @@index([tenantId])
+  @@map("diretorio_grupo_membros")
 }

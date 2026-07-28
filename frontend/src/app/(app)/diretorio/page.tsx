@@ -6,6 +6,7 @@ import { PERMISSIONS, can } from '@/lib/session-types';
 import { ConnectionForm, RetestButton } from './connection-form';
 import { MirrorPanel } from './mirror-panel';
 import { LinkPanel } from './link-panel';
+import { OrgPanel } from './org-panel';
 import type { Conexao, Equipe, ResumoDoDiretorio } from './types';
 
 const RESUMO_VAZIO: ResumoDoDiretorio = {
@@ -154,6 +155,14 @@ export default async function DiretorioPage() {
             equipes={equipesResult.data}
             vinculadas={resumoResult.data.contadores.vinculadas}
           />
+        </div>
+      ) : null}
+
+      {/* Leitura pura do espelho — exige só `view`, então aparece para quem
+          acompanha o diretório sem poder mexer em nada. */}
+      {conexao ? (
+        <div className="mb-4">
+          <OrgPanel conexaoId={conexao.id} />
         </div>
       ) : null}
 

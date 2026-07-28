@@ -94,7 +94,19 @@ describe('o motor de sincronização não alcança o mundo operacional', () => {
   it('o repositório do módulo só lê de tabela operacional, nunca escreve', () => {
     const fonte = readFileSync(join(RAIZ, 'directory.repository.ts'), 'utf8');
 
-    const MODELOS_DO_DIRETORIO = ['directoryConnection', 'directoryPerson', 'directoryDepartment', 'directoryJobTitle', 'directorySyncRun', 'directorySyncEvent'];
+    // Modelos do espelho. Escrever em qualquer coisa fora desta lista é o que
+    // o teste existe para pegar — inclusive quando alguém acrescenta um modelo
+    // novo e esquece de declarar que ele é do diretório.
+    const MODELOS_DO_DIRETORIO = [
+      'directoryConnection',
+      'directoryPerson',
+      'directoryDepartment',
+      'directoryJobTitle',
+      'directoryGroup',
+      'directoryGroupMember',
+      'directorySyncRun',
+      'directorySyncEvent',
+    ];
     const LEITURAS = ['findFirst', 'findMany', 'findUnique', 'count', 'aggregate', 'groupBy'];
 
     const escritasIndevidas = [...fonte.matchAll(/prisma\.(\w+)\.(\w+)/g)]

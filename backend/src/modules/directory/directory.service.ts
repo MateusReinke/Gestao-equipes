@@ -367,6 +367,8 @@ export async function sincronizarDiretorio(id: number, forcarCompleta = false, u
     incluirDesabilitados: opcoes.sincronizarUsuariosDesabilitados,
     logOperacoes: opcoes.logOperacoes,
     disparadoPorId: user?.userId ?? null,
+    sincronizarGestores: opcoes.sincronizarGestores,
+    sincronizarGrupos: opcoes.sincronizarGrupos,
     autoCriarColaboradores: opcoes.autoCriarColaboradores,
     autoDesativarColaboradores: opcoes.autoDesativarColaboradores,
     equipePadraoId: conexao.equipePadraoId,

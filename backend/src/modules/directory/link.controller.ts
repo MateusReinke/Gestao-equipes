@@ -16,6 +16,7 @@ import {
   promoverPessoa,
   vincularPessoa,
 } from './link.service';
+import { grupos, organograma, sugestoesDeResponsavel } from './org.service';
 
 function tratarErro(error: unknown, res: Response) {
   if (error instanceof DiretorioDesabilitadoError) return res.status(503).json({ error: error.message });
@@ -141,6 +142,34 @@ export const linkController = {
       });
 
       return res.json(resultado);
+    } catch (error) {
+      return tratarErro(error, res);
+    }
+  },
+};
+
+/// Leituras derivadas do diretório: organograma, grupos e a sugestão de
+/// responsáveis. Nenhuma escreve nada.
+export const orgController = {
+  async chart(req: Request, res: Response) {
+    try {
+      return res.json(await organograma(Number(req.params.id), req.user));
+    } catch (error) {
+      return tratarErro(error, res);
+    }
+  },
+
+  async groups(req: Request, res: Response) {
+    try {
+      return res.json(await grupos(Number(req.params.id), req.user));
+    } catch (error) {
+      return tratarErro(error, res);
+    }
+  },
+
+  async suggestions(req: Request, res: Response) {
+    try {
+      return res.json(await sugestoesDeResponsavel(Number(req.params.id), req.user));
     } catch (error) {
       return tratarErro(error, res);
     }

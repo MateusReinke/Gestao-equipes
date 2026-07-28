@@ -453,6 +453,58 @@ sincronização já escreveu nele.
 
 Não são deriváveis um do outro: o gestor de RH de um analista pode não ser o responsável pela equipe de plantão dele. O `manager` do Entra alimenta o organograma e **sugere** vínculos, sempre confirmados por uma pessoa.
 
+### Organograma, grupos e sugestão de responsáveis
+
+Hierarquia e grupos são leituras opcionais (`SYNC_MANAGERS`, `SYNC_GROUPS`),
+porque cada uma custa requisições próprias ao Graph. Ambas rodam **depois** das
+pessoas: gestor é referência a um Object ID que precisa existir no espelho, e
+membro de grupo é uma pessoa que precisa já ter sido gravada.
+
+No Graph o gestor não vem junto do usuário — é uma requisição por pessoa. O
+cliente agrupa em `$batch` de 20 e **reordena as respostas por id**, porque o
+Graph não garante a ordem do lote; casar por posição trocaria a chefia de
+pessoas silenciosamente. Um 404 no lote significa "não tem gestor", não erro.
+
+A hierarquia é relida inteira mesmo em execução incremental: perguntar só de
+quem veio no delta deixaria passar a troca de chefia de quem não teve outro
+campo alterado, já que o delta de usuários não reporta mudança de `manager`.
+
+Hierarquia e grupos são acessórios — a falha de qualquer um vira aviso na
+execução e não invalida as pessoas já gravadas. Grupo que some do diretório
+recebe `removido_em`, nunca `DELETE`, pela mesma razão das pessoas.
+
+**Grupo do diretório não é equipe operacional.** Grupo do Entra descreve
+distribuição de e-mail e concessão de acesso; equipe aqui é quem entra na
+escala, tem responsável e gera plantão. Importar um como o outro traria a
+estrutura errada para dentro da operação, então grupos ficam em
+`diretorio_grupos` e são apenas exibidos.
+
+O organograma é o `manager` desenhado como árvore, com duas defesas contra dado
+sujo que diretório corporativo tem com frequência incômoda:
+
+- **Gestor fora do espelho** (saiu da empresa, ou está fora do filtro de
+  leitura): a pessoa vira raiz em vez de sumir da árvore.
+- **Ciclo** (A reporta a B que reporta a A): a aresta que fecharia o ciclo é
+  ignorada e quem sobra vira raiz. Sem isso a montagem entraria em recursão
+  infinita.
+
+A tela informa quantos órfãos e quantos ciclos houve — é o sintoma de um
+diretório que precisa de arrumação, e escondê-lo faria a árvore mentir por
+omissão.
+
+Sobre isso o módulo calcula uma **sugestão de responsável por equipe**: para
+cada equipe, a quem os colaboradores dela reportam no diretório; quem for gestor
+de mais gente é o candidato. É pista, não aplicação — aplicar `manager` como
+`gestor_equipes` daria visibilidade da escala e alertas de férias a quem não
+deveria tê-los. A confirmação é humana, em **Equipes > Responsáveis**.
+
+Gestor sugerido sem colaborador vinculado aparece marcado e não é acionável:
+responsável por equipe é um **usuário** do sistema, e sem vínculo não há como
+chegar até ele.
+
+As três leituras (organograma, grupos, sugestões) exigem apenas
+`directory.view` e não escrevem em lugar nenhum.
+
 ### Conta desabilitada não é desligamento
 
 `accountEnabled = false` pode ser licença médica, afastamento ou suspensão de licença — não só saída. Se `AUTO_DISABLE_USERS` gravasse `data_desligamento`, o cálculo de férias truncaria o período aquisitivo e **reduziria direito adquirido em silêncio**.
@@ -477,8 +529,10 @@ Entregue: schema do espelho, conexão por empresa com segredo cifrado, contrato
 paginação e `Retry-After` honrado, teste de conexão, carga completa de pessoas
 com catálogos derivados, **sincronização incremental com queda automática para
 completa quando o cursor expira**, **agendador com trava de concorrência** e a
-tela do espelho em leitura, e a **reconciliação com o cadastro** — vínculo com
-prévia, promoção a colaborador, travas por campo e as duas automações opcionais.
+tela do espelho em leitura, a **reconciliação com o cadastro** — vínculo com
+prévia, promoção a colaborador, travas por campo e as duas automações opcionais
+— e a **leitura de hierarquia e grupos** com organograma, lista de grupos e
+sugestão de responsável por equipe.
 
 Enquanto ninguém vincula, a sincronização não escreve uma linha operacional. O
 que muda isso é um ato explícito por pessoa, não um efeito colateral.
@@ -488,7 +542,7 @@ cadastro só nasce na reconciliação.
 
 Remover uma conexão apaga o espelho em cascata — é réplica, e uma nova sincronização traz tudo de volta. Já uma conexão com pessoas vinculadas a colaboradores responde **409** com a contagem, porque vínculo é decisão de gente: para só parar de sincronizar, desative a conexão.
 
-Ainda não entregue: grupos, organograma e fotos.
+Ainda não entregue: fotos de perfil.
 
 ## Módulos
 
@@ -505,7 +559,7 @@ Ainda não entregue: grupos, organograma e fotos.
 | **Controle de férias** | Ciclos aquisitivo/concessivo por pessoa, saldo, prazo e alertas de vencimento pela CLT. |
 | **Usuários e papéis** | Gestão de acesso, atribuição de papéis e criação de papéis customizados. |
 | **Relatórios** | Cinco relatórios operacionais com filtro de período e equipe, prévia e exportação em CSV. |
-| **Diretório** | Conexão com o Microsoft Entra ID: credenciais cifradas por empresa e diagnóstico de permissões. |
+| **Diretório** | Espelho do Microsoft Entra ID: credenciais cifradas por empresa, sincronização incremental agendada, vínculo com o cadastro, organograma e grupos. |
 | **Auditoria** | Quem fez, o quê, quando, de onde — com estado antes/depois. |
 
 ## Exclusão protegida por histórico
@@ -534,7 +588,7 @@ Toda mutação relevante registra `tenant`, `ator`, `ação`, `entidade`, `antes
 cd backend && npm test
 ```
 
-396 testes cobrindo:
+423 testes cobrindo:
 
 - **Autenticação:** credenciais válidas/inválidas, usuário inativo, vínculo único, múltiplos vínculos, Administrador Global.
 - **Autorização:** middleware de sessão, tenant ativo obrigatório, rotas exclusivas do Administrador Global, `requirePermission` com OR entre permissões.
@@ -570,4 +624,8 @@ cd backend && npm test
 - **Trava de concorrência:** recusa quando outra execução já reivindicou, e libera a trava tanto no caminho feliz quanto quando a execução estoura.
 - **Agendador:** conexão nunca sincronizada vence na hora, intervalo é o da própria empresa (com queda para o padrão quando o valor é lixo), ocupada e inativa são puladas, reivindicação órfã de mais de uma hora não segura a conexão, perder a corrida pela trava não é erro, uma empresa com problema não impede as seguintes, e a sincronização é em série.
 - **Mapeamento do Entra:** e-mail de caixa preferido ao login, queda para o login quando não há caixa, primeiro telefone da lista, string em branco tratada como ausente, conta de serviço sem nome caindo no login, objeto sem Object ID descartado, `accountEnabled` ausente tratado como habilitada e o marcador de exclusão do delta.
+- **Lote do Graph:** respostas reordenadas por id (o Graph não garante a ordem do lote), 404 no lote tratado como ausência e não como erro, e o corte em 20 requisições por chamada.
+- **Hierarquia e grupos:** gestor gravado por Object ID, quem perdeu o gestor tem o campo limpo, falha na leitura vira aviso sem derrubar a execução, grupo ausente marcado e não apagado, e membro que não está no espelho não vira linha.
+- **Organograma:** hierarquia desenhada a partir de quem reporta a quem, contagem da subárvore inteira, gestor fora do espelho que não faz a pessoa sumir, ciclo direto e ciclo longo cortados sem laço infinito, pessoa que é o próprio gestor virando raiz, e lista vazia que não quebra.
+- **Sugestão de responsável:** o gestor de mais gente da equipe vence, equipe sem ninguém vinculado não gera sugestão, gestor fora do espelho é ignorado, e gestor sem colaborador vinculado aparece como não acionável.
 - **Fronteira diretório/operação:** nenhum arquivo do módulo importa repositório operacional fora da lista declarada, provedores não importam Prisma como valor, e o repositório do módulo só lê de tabela operacional.

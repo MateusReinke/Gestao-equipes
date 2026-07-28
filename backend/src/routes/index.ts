@@ -21,7 +21,7 @@ import { dashboardBuilderController } from '../controllers/dashboard-builder.con
 import { reportController } from '../controllers/report.controller';
 import { hrVacationController, notificationController } from '../controllers/hr-vacation.controller';
 import { directoryController } from '../modules/directory/directory.controller';
-import { linkController } from '../modules/directory/link.controller';
+import { linkController, orgController } from '../modules/directory/link.controller';
 
 export const router = Router();
 
@@ -179,6 +179,10 @@ router.post('/api/diretorio/pessoas/:pessoaId/vincular', auth(), requirePermissi
 router.post('/api/diretorio/pessoas/:pessoaId/promover', auth(), requirePermission(P.DIRECTORY_RECONCILE), asyncHandler(linkController.promote));
 router.post('/api/diretorio/pessoas/:pessoaId/desvincular', auth(), requirePermission(P.DIRECTORY_RECONCILE), asyncHandler(linkController.unlink));
 router.put('/api/diretorio/pessoas/:pessoaId/travas', auth(), requirePermission(P.DIRECTORY_RECONCILE), asyncHandler(linkController.locks));
+// Organograma, grupos e sugestões: leitura pura do espelho, logo `view`.
+router.get('/api/diretorio/conexoes/:id/organograma', auth(), requirePermission(P.DIRECTORY_VIEW), asyncHandler(orgController.chart));
+router.get('/api/diretorio/conexoes/:id/grupos', auth(), requirePermission(P.DIRECTORY_VIEW), asyncHandler(orgController.groups));
+router.get('/api/diretorio/conexoes/:id/sugestoes-responsavel', auth(), requirePermission(P.DIRECTORY_VIEW), asyncHandler(orgController.suggestions));
 
 // ---------- Integrações públicas (preenchimento automático de cadastro) ----------
 router.get('/api/lookup/cnpj/:cnpj', auth(), requirePermission(P.CLIENT_CREATE, P.CLIENT_EDIT), asyncHandler(lookupController.cnpj));
